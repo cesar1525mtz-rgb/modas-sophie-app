@@ -1,4 +1,4 @@
-name: Build Modas Sophie Android APK
+namname: Build Modas Sophie Android APK
 
 on:
   workflow_dispatch:
@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,9 +23,11 @@ jobs:
       - name: Create Android host project
         run: flutter create --platforms=android --org com.modassophie --project-name modas_sophie .
 
+      - name: Add Android internet permission
+        run: sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
+
       - name: Get dependencies
         run: flutter pub get
-
 
       - name: Build release APK
         run: flutter build apk --release
