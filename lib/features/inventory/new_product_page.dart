@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../core/sku_service.dart';
-import '../../models/product.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../data/inventory_repository.dart';
 
 class NewProductPage extends StatefulWidget {
   const NewProductPage({super.key});
@@ -19,20 +20,40 @@ class _NewProductPageState extends State<NewProductPage> {
   final color = TextEditingController();
   final stock = TextEditingController(text: '1');
 
+  late final InventoryRepository repository;
+  bool saving = false;
   String category = 'Blusas';
 
-  final prefixes = const {
-    'Blusas': 'BLU',
-    'Vestidos': 'VES',
-    'Pantalón dama': 'PDA',
-    'Playera caballero': 'PLC',
-    'Bóxer': 'BOX',
-    'Calcetines': 'CAL',
-    'Bolsas': 'BOL',
-    'Mochilas': 'MOC',
-    'Fundas celular': 'FUN',
-    'Cables': 'CAB',
-  };
+  final categories = const [
+    'Blusas',
+    'Vestidos',
+    'Pantalón dama',
+    'Playera caballero',
+    'Bóxer',
+    'Calcetines',
+    'Bolsas',
+    'Mochilas',
+    'Fundas celular',
+    'Cables',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    repository = InventoryRepository(Supabase.instance.client);
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    cost.dispose();
+    price.dispose();
+    minimumStock.dispose();
+    size.dispose();
+    color.dispose();
+    stock.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,24 +72,32 @@ class _NewProductPageState extends State<NewProductPage> {
             DropdownButtonFormField<String>(
               initialValue: category,
               decoration: const InputDecoration(labelText: 'Categoría'),
-              items: prefixes.keys
-                  .map((item) => DropdownMenuItem(
-                        value: item,
-                        child: Text(item),
-                      ))
+              items: categories
+                  .map(
+                    (item) => DropdownMenuItem<String>(
+                      value: item,
+                      child: Text(item),
+                    ),
+                  )
                   .toList(),
-              onChanged: (value) => setState(() => category = value!),
+              onChanged: saving
+                  ? null
+                  : (value) => setState(() => category = value!),
             ),
             TextFormField(
               controller: cost,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Costo de compra'),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration:
+                  const InputDecoration(labelText: 'Costo de compra'),
               validator: _required,
             ),
             TextFormField(
               controller: price,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Precio de venta'),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration:
+                  const InputDecoration(labelText: 'Precio de venta'),
               validator: _required,
             ),
             TextFormField(
@@ -77,25 +106,36 @@ class _NewProductPageState extends State<NewProductPage> {
               decoration: const InputDecoration(labelText: 'Stock mínimo'),
             ),
             const Divider(height: 32),
-            Text('Primera variante',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Primera variante',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             TextFormField(
               controller: size,
-              decoration: const InputDecoration(labelText: 'Talla (opcional)'),
+              decoration:
+                  const InputDecoration(labelText: 'Talla (opcional)'),
             ),
             TextFormField(
               controller: color,
-              decoration: const InputDecoration(labelText: 'Color (opcional)'),
+              decoration:
+                  const InputDecoration(labelText: 'Color (opcional)'),
             ),
             TextFormField(
               controller: stock,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Cantidad inicial'),
+              decoration:
+                  const InputDecoration(labelText: 'Cantidad inicial'),
             ),
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: _save,
-              child: const Text('GUARDAR PRODUCTO'),
+              onPressed: saving ? null : _save,
+              child: saving
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('GUARDAR PRODUCTO'),
             ),
           ],
         ),
@@ -103,40 +143,48 @@ class _NewProductPageState extends State<NewProductPage> {
     );
   }
 
-  String? _required(String? value) =>
-      value == null || value.trim().isEmpty ? 'Campo obligatorio' : null;
+  String? _required(String? value) {
+    return value == null || value.trim().isEmpty
+        ? 'Campo obligatorio'
+        : null;
+  }
 
-  void _save() {
+  Future<void> _save() async {
     if (!formKey.currentState!.validate()) return;
 
-    // Consecutivo temporal del prototipo. Supabase lo generará de forma atómica.
-    final base = SkuService.baseSku(
-      prefix: prefixes[category]!,
-      consecutive: DateTime.now().millisecondsSinceEpoch % 10000,
-    );
+    final parsedCost = double.tryParse(cost.text.trim());
+    final parsedPrice = double.tryParse(price.text.trim());
 
-    final variant = ProductVariant(
-      sku: SkuService.variantSku(
-        baseSku: base,
-        size: size.text,
-        color: color.text,
-      ),
-      size: size.text.isEmpty ? null : size.text,
-      color: color.text.isEmpty ? null : color.text,
-      stock: int.tryParse(stock.text) ?? 0,
-    );
+    if (parsedCost == null || parsedPrice == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Revisa costo y precio de venta')),
+      );
+      return;
+    }
 
-    Navigator.pop(
-      context,
-      Product(
-        skuBase: base,
+    setState(() => saving = true);
+
+    try {
+      await repository.createProduct(
+        categoryName: category,
         name: name.text.trim(),
-        category: category,
-        cost: double.parse(cost.text),
-        salePrice: double.parse(price.text),
-        minimumStock: int.tryParse(minimumStock.text) ?? 0,
-        variants: [variant],
-      ),
-    );
+        cost: parsedCost,
+        salePrice: parsedPrice,
+        minimumStock: int.tryParse(minimumStock.text.trim()) ?? 0,
+        size: size.text.trim().isEmpty ? null : size.text.trim(),
+        color: color.text.trim().isEmpty ? null : color.text.trim(),
+        initialStock: int.tryParse(stock.text.trim()) ?? 0,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al guardar: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
   }
 }
