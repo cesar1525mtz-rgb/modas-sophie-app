@@ -155,6 +155,7 @@ class _InventoryPageState extends State<InventoryPage> {
       itemCount: filtered.length,
       itemBuilder: (_, index) {
         final product = filtered[index];
+
         final lowStock =
             product.totalStock <= product.minimumStock;
 
@@ -193,7 +194,7 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 
   Future<void> _openProduct(Product product) async {
-    await showModalBottomSheet<void>(
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (sheetContext) {
@@ -211,7 +212,10 @@ class _InventoryPageState extends State<InventoryPage> {
                 const SizedBox(height: 8),
                 Text(product.skuBase),
                 const SizedBox(height: 20),
-                _detailRow('Categoría', product.category),
+                _detailRow(
+                  'Categoría',
+                  product.category,
+                ),
                 _detailRow(
                   'Costo',
                   '\$${product.cost.toStringAsFixed(2)}',
@@ -326,12 +330,15 @@ class _InventoryPageState extends State<InventoryPage> {
     final nameController = TextEditingController(
       text: product.name,
     );
+
     final costController = TextEditingController(
       text: product.cost.toStringAsFixed(2),
     );
+
     final priceController = TextEditingController(
       text: product.salePrice.toStringAsFixed(2),
     );
+
     final minimumController = TextEditingController(
       text: product.minimumStock.toString(),
     );
@@ -437,9 +444,7 @@ class _InventoryPageState extends State<InventoryPage> {
     }
   }
 
-  Future<void> _editVariantStock(
-    ProductVariant variant,
-  ) async {
+  Future<void> _editVariantStock(ProductVariant variant) async {
     final stockController = TextEditingController(
       text: variant.stock.toString(),
     );
