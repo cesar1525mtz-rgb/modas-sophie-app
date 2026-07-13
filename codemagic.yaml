@@ -1,0 +1,23 @@
+workflows:
+  modas-sophie-android:
+    name: Modas Sophie Android APK
+    max_build_duration: 120
+
+    environment:
+      flutter: stable
+
+    scripts:
+      - name: Preparar proyecto Android
+        script: |
+          flutter create --platforms=android .
+
+      - name: Instalar dependencias
+        script: |
+          flutter pub get
+
+      - name: Compilar APK
+        script: |
+          flutter build apk --debug
+
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
