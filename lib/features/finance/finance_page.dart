@@ -159,9 +159,11 @@ class _FinancePageState extends State<FinancePage> {
                   else ...[
                     Card(
                       child: ListTile(
+                        onTap: actionBusy ? null : _closeCash,
                         title: const Text('Caja abierta'),
                         subtitle: Text(
-                          'Fondo inicial: \$${money(initialFund)}',
+                          'Fondo inicial: \$${money(initialFund)}\n'
+                          'Toca aquí para cerrar caja',
                         ),
                         trailing: const Icon(Icons.lock_open),
                       ),
@@ -240,8 +242,7 @@ class _FinancePageState extends State<FinancePage> {
         trailing: Text(
           '\$${money(value)}',
           style: TextStyle(
-            fontWeight:
-                strong ? FontWeight.w800 : FontWeight.w500,
+            fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
           ),
         ),
       ),
@@ -263,16 +264,14 @@ class _FinancePageState extends State<FinancePage> {
             child: Text(
               title,
               style: TextStyle(
-                fontWeight:
-                    strong ? FontWeight.w800 : FontWeight.w400,
+                fontWeight: strong ? FontWeight.w800 : FontWeight.w400,
               ),
             ),
           ),
           Text(
             '$prefix${money(value.abs())}',
             style: TextStyle(
-              fontWeight:
-                  strong ? FontWeight.w800 : FontWeight.w600,
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
             ),
           ),
         ],
