@@ -1,4 +1,4 @@
-namname: Build Modas Sophie Android APK
+name: Build Modas Sophie Android APK
 
 on:
   workflow_dispatch:
