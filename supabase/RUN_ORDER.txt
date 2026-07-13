@@ -1,0 +1,16 @@
+EJECUTAR EN ESTE ORDEN EN SUPABASE SQL EDITOR
+
+1. schema.sql
+2. sprint3_security_and_functions.sql
+3. sprint4_users.sql
+4. sprint5_pos.sql
+5. sprint6_finance.sql
+6. sprint7_pos_cash_fix.sql
+7. sprint7_dashboard.sql
+
+Después:
+- Crear el negocio Modas Sophie.
+- Crear el usuario dueño en Supabase Auth.
+- Insertar su user_profile con rol OWNER.
+- Crear las categorías iniciales.
+- Ejecutar Flutter con SUPABASE_URL y SUPABASE_ANON_KEY.
