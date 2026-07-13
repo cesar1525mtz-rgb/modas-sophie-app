@@ -155,7 +155,8 @@ class _InventoryPageState extends State<InventoryPage> {
       itemCount: filtered.length,
       itemBuilder: (_, index) {
         final product = filtered[index];
-        final lowStock = product.totalStock <= product.minimumStock;
+        final lowStock =
+            product.totalStock <= product.minimumStock;
 
         return Card(
           child: ListTile(
@@ -192,12 +193,12 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 
   Future<void> _openProduct(Product product) async {
-    await showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (sheetContext) {
         return SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -210,10 +211,7 @@ class _InventoryPageState extends State<InventoryPage> {
                 const SizedBox(height: 8),
                 Text(product.skuBase),
                 const SizedBox(height: 20),
-                _detailRow(
-                  'Categoría',
-                  product.category,
-                ),
+                _detailRow('Categoría', product.category),
                 _detailRow(
                   'Costo',
                   '\$${product.cost.toStringAsFixed(2)}',
@@ -224,13 +222,13 @@ class _InventoryPageState extends State<InventoryPage> {
                 ),
                 _detailRow(
                   'Stock total',
-                  '${product.totalStock}',
+                  product.totalStock.toString(),
                 ),
                 _detailRow(
                   'Stock mínimo',
-                  '${product.minimumStock}',
+                  product.minimumStock.toString(),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 const Text(
                   'Variantes',
                   style: TextStyle(
@@ -239,19 +237,12 @@ class _InventoryPageState extends State<InventoryPage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                ...product.variants.map(
-                  (variant) => Card(
+                ...product.variants.map((variant) {
+                  return Card(
                     child: ListTile(
                       title: Text(variant.sku),
                       subtitle: Text(
-                        [
-                          if (variant.size != null &&
-                              variant.size!.isNotEmpty)
-                            'Talla: ${variant.size}',
-                          if (variant.color != null &&
-                              variant.color!.isNotEmpty)
-                            'Color: ${variant.color}',
-                        ].join(' · '),
+                        _variantDescription(variant),
                       ),
                       trailing: Text(
                         '${variant.stock} pzas.',
@@ -261,15 +252,15 @@ class _InventoryPageState extends State<InventoryPage> {
                         await _editVariantStock(variant);
                       },
                     ),
-                  ),
-                ),
+                  );
+                }),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: () async {
+                    onPressed: () {
                       Navigator.pop(sheetContext);
-                      await _editProduct(product);
+                      _editProduct(product);
                     },
                     icon: const Icon(Icons.edit),
                     label: const Text('EDITAR PRODUCTO'),
@@ -279,9 +270,9 @@ class _InventoryPageState extends State<InventoryPage> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () async {
+                    onPressed: () {
                       Navigator.pop(sheetContext);
-                      await _deleteProduct(product);
+                      _deleteProduct(product);
                     },
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('ELIMINAR PRODUCTO'),
@@ -293,6 +284,24 @@ class _InventoryPageState extends State<InventoryPage> {
         );
       },
     );
+  }
+
+  String _variantDescription(ProductVariant variant) {
+    final details = <String>[];
+
+    if (variant.size != null && variant.size!.isNotEmpty) {
+      details.add('Talla: ${variant.size}');
+    }
+
+    if (variant.color != null && variant.color!.isNotEmpty) {
+      details.add('Color: ${variant.color}');
+    }
+
+    if (details.isEmpty) {
+      return 'Sin talla ni color';
+    }
+
+    return details.join(' · ');
   }
 
   Widget _detailRow(String label, String value) {
@@ -317,15 +326,12 @@ class _InventoryPageState extends State<InventoryPage> {
     final nameController = TextEditingController(
       text: product.name,
     );
-
     final costController = TextEditingController(
       text: product.cost.toStringAsFixed(2),
     );
-
     final priceController = TextEditingController(
       text: product.salePrice.toStringAsFixed(2),
     );
-
     final minimumController = TextEditingController(
       text: product.minimumStock.toString(),
     );
@@ -347,7 +353,8 @@ class _InventoryPageState extends State<InventoryPage> {
                 ),
                 TextField(
                   controller: costController,
-                  keyboardType: const TextInputType.numberWithOptions(
+                  keyboardType:
+                      const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   decoration: const InputDecoration(
@@ -356,7 +363,8 @@ class _InventoryPageState extends State<InventoryPage> {
                 ),
                 TextField(
                   controller: priceController,
-                  keyboardType: const TextInputType.numberWithOptions(
+                  keyboardType:
+                      const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   decoration: const InputDecoration(
@@ -367,4 +375,197 @@ class _InventoryPageState extends State<InventoryPage> {
                   controller: minimumController,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'Stock
+                    labelText: 'Stock mínimo',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('CANCELAR'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('GUARDAR'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (save != true) return;
+
+    try {
+      final name = nameController.text.trim();
+      final cost = double.parse(costController.text.trim());
+      final price = double.parse(priceController.text.trim());
+      final minimum = int.parse(minimumController.text.trim());
+
+      await client
+          .from('products')
+          .update({
+            'name': name,
+            'current_cost': cost,
+            'sale_price': price,
+            'minimum_stock': minimum,
+          })
+          .eq('sku_base', product.skuBase);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Producto actualizado'),
+        ),
+      );
+
+      await _loadProducts();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No fue posible actualizar: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _editVariantStock(
+    ProductVariant variant,
+  ) async {
+    final stockController = TextEditingController(
+      text: variant.stock.toString(),
+    );
+
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Ajustar stock'),
+          content: TextField(
+            controller: stockController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Existencia actual',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('CANCELAR'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('GUARDAR'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (save != true) return;
+
+    try {
+      final stock = int.parse(stockController.text.trim());
+
+      if (stock < 0) {
+        throw Exception('El stock no puede ser negativo');
+      }
+
+      await client
+          .from('product_variants')
+          .update({
+            'current_stock': stock,
+          })
+          .eq('sku', variant.sku);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Stock actualizado'),
+        ),
+      );
+
+      await _loadProducts();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No fue posible actualizar el stock: $e',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteProduct(Product product) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Eliminar producto'),
+          content: Text(
+            '¿Deseas eliminar ${product.name} del inventario?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('CANCELAR'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('ELIMINAR'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await client
+          .from('products')
+          .update({
+            'active': false,
+          })
+          .eq('sku_base', product.skuBase);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Producto eliminado'),
+        ),
+      );
+
+      await _loadProducts();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No fue posible eliminar: $e'),
+        ),
+      );
+    }
+  }
+}
