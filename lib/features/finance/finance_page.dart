@@ -37,16 +37,86 @@ class _FinancePageState extends State<FinancePage> {
     }
   }
 
+  double number(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String money(dynamic value) {
+    return number(value).toStringAsFixed(2);
+  }
+
+  dynamic sessionValue(List<String> keys) {
+    if (session == null) return null;
+
+    for (final key in keys) {
+      if (session!.containsKey(key) && session![key] != null) {
+        return session![key];
+      }
+    }
+
+    return null;
+  }
+
+  double get initialFund => number(
+        sessionValue([
+          'initial_fund',
+          'opening_amount',
+          'initial_cash',
+        ]),
+      );
+
+  double get cashSales => number(
+        sessionValue([
+          'cash_sales',
+          'sales_cash',
+          'cash_sales_total',
+        ]),
+      );
+
+  double get cashExpenses => number(
+        sessionValue([
+          'cash_expenses',
+          'expenses_cash',
+          'cash_expenses_total',
+        ]),
+      );
+
+  double get withdrawals => number(
+        sessionValue([
+          'withdrawals',
+          'cash_withdrawals',
+          'withdrawals_total',
+        ]),
+      );
+
+  double get expectedCash {
+    final direct = sessionValue([
+      'expected_cash',
+      'expected_amount',
+      'cash_expected',
+    ]);
+
+    if (direct != null) {
+      return number(direct);
+    }
+
+    return initialFund + cashSales - cashExpenses - withdrawals;
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Finanzas'),
-        ),
-        body: loading
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
-            : ListView(
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Finanzas'),
+      ),
+      body: loading
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : RefreshIndicator(
+              onRefresh: refresh,
+              child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
                   Text(
@@ -54,10 +124,22 @@ class _FinancePageState extends State<FinancePage> {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
-                  _metric('Ventas', week?['sales_total']),
-                  _metric('Costo vendido', week?['sold_cost']),
-                  _metric('Ganancia bruta', week?['gross_profit']),
-                  _metric('Gastos', week?['expenses']),
+                  _metric(
+                    'Ventas',
+                    week?['sales_total'],
+                  ),
+                  _metric(
+                    'Costo vendido',
+                    week?['sold_cost'],
+                  ),
+                  _metric(
+                    'Ganancia bruta',
+                    week?['gross_profit'],
+                  ),
+                  _metric(
+                    'Gastos',
+                    week?['expenses'],
+                  ),
                   _metric(
                     'UTILIDAD NETA',
                     week?['net_profit'],
@@ -79,11 +161,55 @@ class _FinancePageState extends State<FinancePage> {
                       child: ListTile(
                         title: const Text('Caja abierta'),
                         subtitle: Text(
-                          'Fondo inicial: \$${money(session?['initial_fund'])}',
+                          'Fondo inicial: \$${money(initialFund)}',
                         ),
                         trailing: const Icon(Icons.lock_open),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Resumen de caja',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                            const SizedBox(height: 16),
+                            _cashRow(
+                              'Fondo inicial',
+                              initialFund,
+                            ),
+                            _cashRow(
+                              'Ventas en efectivo',
+                              cashSales,
+                            ),
+                            _cashRow(
+                              'Gastos de caja',
+                              -cashExpenses,
+                            ),
+                            _cashRow(
+                              'Retiros',
+                              -withdrawals,
+                            ),
+                            const Divider(height: 24),
+                            _cashRow(
+                              'EFECTIVO ESPERADO',
+                              expectedCash,
+                              strong: true,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     OutlinedButton(
                       onPressed: actionBusy ? null : _expense,
                       child: const Text('REGISTRAR GASTO'),
@@ -99,33 +225,65 @@ class _FinancePageState extends State<FinancePage> {
                   ],
                 ],
               ),
-      );
+            ),
+    );
+  }
 
   Widget _metric(
     String title,
     dynamic value, {
     bool strong = false,
-  }) =>
-      Card(
-        child: ListTile(
-          title: Text(title),
-          trailing: Text(
-            '\$${money(value)}',
-            style: TextStyle(
-              fontWeight:
-                  strong ? FontWeight.w800 : FontWeight.w500,
-            ),
+  }) {
+    return Card(
+      child: ListTile(
+        title: Text(title),
+        trailing: Text(
+          '\$${money(value)}',
+          style: TextStyle(
+            fontWeight:
+                strong ? FontWeight.w800 : FontWeight.w500,
           ),
         ),
-      );
+      ),
+    );
+  }
 
-  String money(dynamic value) =>
-      ((value as num?)?.toDouble() ?? 0).toStringAsFixed(2);
+  Widget _cashRow(
+    String title,
+    double value, {
+    bool strong = false,
+  }) {
+    final prefix = value < 0 ? '-\$' : '\$';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontWeight:
+                    strong ? FontWeight.w800 : FontWeight.w400,
+              ),
+            ),
+          ),
+          Text(
+            '$prefix${money(value.abs())}',
+            style: TextStyle(
+              fontWeight:
+                  strong ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<String?> ask(
     String title,
     String label, {
-    TextInputType keyboardType = TextInputType.text,
+    TextInputType keyboardType = TextInputType.number,
   }) async {
     final controller = TextEditingController();
 
@@ -135,6 +293,7 @@ class _FinancePageState extends State<FinancePage> {
         title: Text(title),
         content: TextField(
           controller: controller,
+          autofocus: true,
           keyboardType: keyboardType,
           decoration: InputDecoration(
             labelText: label,
@@ -142,14 +301,18 @@ class _FinancePageState extends State<FinancePage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
+            onPressed: () {
+              Navigator.pop(dialogContext);
+            },
             child: const Text('CANCELAR'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              controller.text,
-            ),
+            onPressed: () {
+              Navigator.pop(
+                dialogContext,
+                controller.text,
+              );
+            },
             child: const Text('GUARDAR'),
           ),
         ],
@@ -160,23 +323,15 @@ class _FinancePageState extends State<FinancePage> {
     return result;
   }
 
-  Future<void> _openCash() async {
-    final value = await ask(
-      'Abrir caja',
-      'Fondo inicial',
-      keyboardType:
-          const TextInputType.numberWithOptions(decimal: true),
-    );
-
-    final amount = double.tryParse(value ?? '');
-
-    if (amount == null || amount < 0) return;
+  Future<void> _runAction(
+    Future<void> Function() action,
+  ) async {
+    if (actionBusy) return;
 
     setState(() => actionBusy = true);
 
     try {
-      await repo.openCash(amount);
-      await refresh();
+      await action();
     } finally {
       if (mounted) {
         setState(() => actionBusy = false);
@@ -184,28 +339,43 @@ class _FinancePageState extends State<FinancePage> {
     }
   }
 
+  Future<void> _openCash() async {
+    final value = await ask(
+      'Abrir caja',
+      'Fondo inicial',
+    );
+
+    final amount = double.tryParse(value ?? '');
+
+    if (amount == null || amount < 0) return;
+
+    await _runAction(() async {
+      await repo.openCash(amount);
+      await refresh();
+    });
+  }
+
   Future<void> _expense() async {
     final concept = await ask(
       'Nuevo gasto',
       'Concepto',
+      keyboardType: TextInputType.text,
     );
 
-    if (concept == null || concept.trim().isEmpty) return;
+    if (concept == null || concept.trim().isEmpty) {
+      return;
+    }
 
     final value = await ask(
       'Nuevo gasto',
       'Importe',
-      keyboardType:
-          const TextInputType.numberWithOptions(decimal: true),
     );
 
     final amount = double.tryParse(value ?? '');
 
     if (amount == null || amount <= 0) return;
 
-    setState(() => actionBusy = true);
-
-    try {
+    await _runAction(() async {
       await repo.addExpense(
         concept: concept.trim(),
         amount: amount,
@@ -214,134 +384,50 @@ class _FinancePageState extends State<FinancePage> {
       );
 
       await refresh();
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Gasto registrado: \$${money(amount)}',
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => actionBusy = false);
-      }
-    }
+    });
   }
 
   Future<void> _withdrawal() async {
     final reason = await ask(
       'Retiro de efectivo',
       'Motivo',
+      keyboardType: TextInputType.text,
     );
 
-    if (reason == null || reason.trim().isEmpty) return;
+    if (reason == null || reason.trim().isEmpty) {
+      return;
+    }
 
     final value = await ask(
       'Retiro de efectivo',
       'Importe',
-      keyboardType:
-          const TextInputType.numberWithOptions(decimal: true),
     );
 
     final amount = double.tryParse(value ?? '');
 
     if (amount == null || amount <= 0) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Confirmar retiro'),
-        content: Text(
-          'Motivo: ${reason.trim()}\n'
-          'Importe: \$${money(amount)}\n\n'
-          '¿Registrar este retiro?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, false),
-            child: const Text('CANCELAR'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, true),
-            child: const Text('CONFIRMAR'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    setState(() => actionBusy = true);
-
-    try {
+    await _runAction(() async {
       await repo.addWithdrawal(
         amount,
         reason.trim(),
       );
 
       await refresh();
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Retiro registrado: \$${money(amount)}',
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => actionBusy = false);
-      }
-    }
+    });
   }
 
   Future<void> _closeCash() async {
     final value = await ask(
       'Cerrar caja',
       'Efectivo contado',
-      keyboardType:
-          const TextInputType.numberWithOptions(decimal: true),
     );
 
     final amount = double.tryParse(value ?? '');
 
     if (amount == null || amount < 0) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Confirmar cierre'),
-        content: Text(
-          'Efectivo contado: \$${money(amount)}\n\n'
-          '¿Cerrar la caja?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, false),
-            child: const Text('CANCELAR'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, true),
-            child: const Text('CERRAR CAJA'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    setState(() => actionBusy = true);
-
-    try {
+    await _runAction(() async {
       final result = await repo.closeCash(
         amount,
         null,
@@ -360,8 +446,9 @@ class _FinancePageState extends State<FinancePage> {
           ),
           actions: [
             TextButton(
-              onPressed: () =>
-                  Navigator.pop(dialogContext),
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
               child: const Text('LISTO'),
             ),
           ],
@@ -369,10 +456,6 @@ class _FinancePageState extends State<FinancePage> {
       );
 
       await refresh();
-    } finally {
-      if (mounted) {
-        setState(() => actionBusy = false);
-      }
-    }
+    });
   }
 }
