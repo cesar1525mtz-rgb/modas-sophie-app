@@ -23,10 +23,20 @@ class _NewProductPageState extends State<NewProductPage> {
 
   final Map<String, TextEditingController> stockControllers = {};
 
+  List<Map<String, dynamic>> categories = [];
+
   bool saving = false;
+  bool loadingCategories = true;
   bool savingCategory = false;
+  String? deletingCategoryId;
 
   SupabaseClient get client => Supabase.instance.client;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
 
   @override
   void dispose() {
@@ -80,6 +90,45 @@ class _NewProductPageState extends State<NewProductPage> {
     return result;
   }
 
+  Future<void> _loadCategories() async {
+    if (mounted) {
+      setState(() {
+        loadingCategories = true;
+      });
+    }
+
+    try {
+      final response = await client
+          .from('categories')
+          .select(
+            'id, business_id, name, sku_prefix, active',
+          )
+          .eq('active', true)
+          .order('name');
+
+      final loaded = List<Map<String, dynamic>>.from(
+        response,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        categories = loaded;
+        loadingCategories = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        loadingCategories = false;
+      });
+
+      _message(
+        'No fue posible cargar las categorías: $e',
+      );
+    }
+  }
+
   Future<String?> _askValue({
     required String title,
     required String label,
@@ -103,7 +152,9 @@ class _NewProductPageState extends State<NewProductPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
               child: const Text('CANCELAR'),
             ),
             FilledButton(
@@ -126,9 +177,21 @@ class _NewProductPageState extends State<NewProductPage> {
   }
 
   String _createSkuPrefix(String name) {
-    final clean = name
-        .toUpperCase()
-        .replaceAll(RegExp(r'[^A-Z0-9ÁÉÍÓÚÜÑ]'), '');
+    var clean = name.toUpperCase();
+
+    clean = clean
+        .replaceAll('Á', 'A')
+        .replaceAll('É', 'E')
+        .replaceAll('Í', 'I')
+        .replaceAll('Ó', 'O')
+        .replaceAll('Ú', 'U')
+        .replaceAll('Ü', 'U')
+        .replaceAll('Ñ', 'N');
+
+    clean = clean.replaceAll(
+      RegExp(r'[^A-Z0-9]'),
+      '',
+    );
 
     if (clean.isEmpty) {
       return 'CAT';
@@ -141,6 +204,15 @@ class _NewProductPageState extends State<NewProductPage> {
     return clean.padRight(3, 'X');
   }
 
+  void _selectCategory(
+    Map<String, dynamic> category,
+  ) {
+    setState(() {
+      categoryController.text =
+          (category['name'] ?? '').toString();
+    });
+  }
+
   Future<void> _addCategory() async {
     if (savingCategory) return;
 
@@ -150,59 +222,58 @@ class _NewProductPageState extends State<NewProductPage> {
       hint: 'Ej. Zapatos',
     );
 
-    if (value == null || value.trim().isEmpty) return;
+    if (value == null || value.trim().isEmpty) {
+      return;
+    }
 
     final clean = value.trim();
+
+    Map<String, dynamic>? existingCategory;
+
+    for (final item in categories) {
+      final itemName = (item['name'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+
+      if (itemName == clean.toLowerCase()) {
+        existingCategory = item;
+        break;
+      }
+    }
+
+    if (existingCategory != null) {
+      _selectCategory(existingCategory);
+
+      _message(
+        'La categoría ya existe y fue seleccionada',
+      );
+
+      return;
+    }
+
+    if (categories.isEmpty) {
+      _message(
+        'No se encontró el negocio de Modas Sophie',
+      );
+
+      return;
+    }
 
     setState(() {
       savingCategory = true;
     });
 
     try {
-      final existingCategories = await client
-          .from('categories')
-          .select('id, business_id, name, sku_prefix')
-          .eq('active', true);
-
-      if (existingCategories.isEmpty) {
-        throw Exception(
-          'No se encontró el negocio de Modas Sophie',
-        );
-      }
-
       final businessId =
-          existingCategories.first['business_id'].toString();
-
-      Map<String, dynamic>? existingCategory;
-
-      for (final item in existingCategories) {
-        final itemName =
-            (item['name'] ?? '').toString().trim().toLowerCase();
-
-        if (itemName == clean.toLowerCase()) {
-          existingCategory =
-              Map<String, dynamic>.from(item);
-          break;
-        }
-      }
-
-      if (existingCategory != null) {
-        if (!mounted) return;
-
-        setState(() {
-          categoryController.text =
-              existingCategory!['name'].toString();
-        });
-
-        _message('La categoría ya existe y fue seleccionada');
-        return;
-      }
+          categories.first['business_id'].toString();
 
       final basePrefix = _createSkuPrefix(clean);
+
       String skuPrefix = basePrefix;
       int suffix = 1;
 
-      final usedPrefixes = existingCategories
+      final usedPrefixes = categories
           .map(
             (item) => (item['sku_prefix'] ?? '')
                 .toString()
@@ -223,17 +294,36 @@ class _NewProductPageState extends State<NewProductPage> {
             'sku_prefix': skuPrefix,
             'active': true,
           })
-          .select('id, name, sku_prefix')
+          .select(
+            'id, business_id, name, sku_prefix, active',
+          )
           .single();
 
       if (!mounted) return;
 
       setState(() {
+        categories.add(
+          Map<String, dynamic>.from(inserted),
+        );
+
+        categories.sort(
+          (a, b) => (a['name'] ?? '')
+              .toString()
+              .toLowerCase()
+              .compareTo(
+                (b['name'] ?? '')
+                    .toString()
+                    .toLowerCase(),
+              ),
+        );
+
         categoryController.text =
             inserted['name'].toString();
       });
 
-      _message('Categoría guardada correctamente');
+      _message(
+        'Categoría guardada correctamente',
+      );
     } catch (e) {
       if (!mounted) return;
 
@@ -249,6 +339,106 @@ class _NewProductPageState extends State<NewProductPage> {
     }
   }
 
+  Future<void> _deleteCategory(
+    Map<String, dynamic> category,
+  ) async {
+    final categoryId = category['id'].toString();
+
+    final categoryName =
+        (category['name'] ?? '').toString();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Eliminar categoría'),
+          content: Text(
+            '¿Seguro que deseas eliminar la categoría '
+            '"$categoryName"?\n\n'
+            'Esta acción no se puede deshacer.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text('CANCELAR'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              child: const Text('ELIMINAR'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      deletingCategoryId = categoryId;
+    });
+
+    try {
+      await client
+          .from('categories')
+          .delete()
+          .eq('id', categoryId);
+
+      if (!mounted) return;
+
+      setState(() {
+        categories.removeWhere(
+          (item) =>
+              item['id'].toString() == categoryId,
+        );
+
+        if (categoryController.text
+                .trim()
+                .toLowerCase() ==
+            categoryName.trim().toLowerCase()) {
+          categoryController.clear();
+        }
+      });
+
+      _message(
+        'Categoría eliminada correctamente',
+      );
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+
+      if (e.code == '23503') {
+        _message(
+          'Esta categoría tiene productos y no se puede eliminar',
+        );
+      } else {
+        _message(
+          'No fue posible eliminar la categoría: ${e.message}',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      _message(
+        'No fue posible eliminar la categoría: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          deletingCategoryId = null;
+        });
+      }
+    }
+  }
+
   Future<void> _addSize() async {
     final value = await _askValue(
       title: 'Agregar talla',
@@ -256,7 +446,9 @@ class _NewProductPageState extends State<NewProductPage> {
       hint: 'Ej. 28, CH, M, G',
     );
 
-    if (value == null || value.trim().isEmpty) return;
+    if (value == null || value.trim().isEmpty) {
+      return;
+    }
 
     final clean = value.trim();
 
@@ -279,7 +471,9 @@ class _NewProductPageState extends State<NewProductPage> {
       hint: 'Ej. Negro, Azul, Café',
     );
 
-    if (value == null || value.trim().isEmpty) return;
+    if (value == null || value.trim().isEmpty) {
+      return;
+    }
 
     final clean = value.trim();
 
@@ -302,11 +496,15 @@ class _NewProductPageState extends State<NewProductPage> {
     final category = categoryController.text.trim();
 
     final cost = double.tryParse(
-      costController.text.trim().replaceAll(',', '.'),
+      costController.text
+          .trim()
+          .replaceAll(',', '.'),
     );
 
     final price = double.tryParse(
-      priceController.text.trim().replaceAll(',', '.'),
+      priceController.text
+          .trim()
+          .replaceAll(',', '.'),
     );
 
     final minimum = int.tryParse(
@@ -318,7 +516,10 @@ class _NewProductPageState extends State<NewProductPage> {
         cost == null ||
         price == null ||
         minimum == null) {
-      _message('Completa correctamente todos los datos');
+      _message(
+        'Completa correctamente todos los datos',
+      );
+
       return;
     }
 
@@ -327,7 +528,10 @@ class _NewProductPageState extends State<NewProductPage> {
       final color = variant['color'];
 
       final stock = int.tryParse(
-            _stockController(size, color).text.trim(),
+            _stockController(
+              size,
+              color,
+            ).text.trim(),
           ) ??
           0;
 
@@ -367,7 +571,9 @@ class _NewProductPageState extends State<NewProductPage> {
     } catch (e) {
       if (!mounted) return;
 
-      _message('No fue posible guardar: $e');
+      _message(
+        'No fue posible guardar: $e',
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -409,32 +615,151 @@ class _NewProductPageState extends State<NewProductPage> {
               controller: categoryController,
               readOnly: true,
               decoration: const InputDecoration(
-                labelText: 'Categoría',
-                hintText: 'Sin categoría seleccionada',
+                labelText: 'Categoría seleccionada',
+                hintText: 'Selecciona una categoría',
                 border: OutlineInputBorder(),
               ),
             ),
 
-            TextButton.icon(
-              onPressed:
-                  savingCategory ? null : _addCategory,
-              icon: savingCategory
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Categorías',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: loadingCategories
+                      ? null
+                      : _loadCategories,
+                  tooltip: 'Actualizar categorías',
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            if (loadingCategories)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (categories.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'No hay categorías disponibles',
+                  ),
+                ),
+              )
+            else
+              ...categories.map((category) {
+                final categoryId =
+                    category['id'].toString();
+
+                final categoryName =
+                    (category['name'] ?? '').toString();
+
+                final selected =
+                    categoryController.text
+                            .trim()
+                            .toLowerCase() ==
+                        categoryName
+                            .trim()
+                            .toLowerCase();
+
+                final deleting =
+                    deletingCategoryId == categoryId;
+
+                return Card(
+                  margin: const EdgeInsets.only(
+                    bottom: 8,
+                  ),
+                  child: ListTile(
+                    onTap: deleting
+                        ? null
+                        : () {
+                            _selectCategory(category);
+                          },
+                    leading: Icon(
+                      selected
+                          ? Icons.check_circle
+                          : Icons.category_outlined,
+                    ),
+                    title: Text(
+                      categoryName,
+                      style: TextStyle(
+                        fontWeight: selected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
-                    )
-                  : const Icon(Icons.add),
-              label: Text(
-                savingCategory
-                    ? 'GUARDANDO CATEGORÍA...'
-                    : 'AGREGAR CATEGORÍA',
+                    ),
+                    subtitle: Text(
+                      'SKU: '
+                      '${category['sku_prefix'] ?? ''}',
+                    ),
+                    trailing: deleting
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child:
+                                CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : IconButton(
+                            tooltip:
+                                'Eliminar categoría',
+                            icon: const Icon(
+                              Icons.delete_outline,
+                            ),
+                            onPressed: () {
+                              _deleteCategory(category);
+                            },
+                          ),
+                  ),
+                );
+              }),
+
+            const SizedBox(height: 8),
+
+            SizedBox(
+              height: 50,
+              child: OutlinedButton.icon(
+                onPressed: savingCategory
+                    ? null
+                    : _addCategory,
+                icon: savingCategory
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child:
+                            CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.add),
+                label: Text(
+                  savingCategory
+                      ? 'GUARDANDO CATEGORÍA...'
+                      : 'AGREGAR CATEGORÍA',
+                ),
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
             TextField(
               controller: costController,
@@ -494,7 +819,8 @@ class _NewProductPageState extends State<NewProductPage> {
                 ...sizes.map((size) {
                   return FilterChip(
                     label: Text(size),
-                    selected: selectedSizes.contains(size),
+                    selected:
+                        selectedSizes.contains(size),
                     onSelected: (selected) {
                       setState(() {
                         if (selected) {
@@ -510,144 +836,4 @@ class _NewProductPageState extends State<NewProductPage> {
                 ActionChip(
                   avatar: const Icon(Icons.add),
                   label: const Text('Agregar talla'),
-                  onPressed: _addSize,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 28),
-
-            const Text(
-              'Colores',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ...colors.map((color) {
-                  return FilterChip(
-                    label: Text(color),
-                    selected: selectedColors.contains(color),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          selectedColors.add(color);
-                        } else {
-                          selectedColors.remove(color);
-                        }
-                      });
-                    },
-                  );
-                }),
-
-                ActionChip(
-                  avatar: const Icon(Icons.add),
-                  label: const Text('Agregar color'),
-                  onPressed: _addColor,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 28),
-
-            const Text(
-              'Existencias por variante',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            const Text(
-              'Indica cuántas piezas tienes de cada combinación.',
-            ),
-
-            const SizedBox(height: 16),
-
-            ...combinations.map((variant) {
-              final size = variant['size'];
-              final color = variant['color'];
-
-              final description = [
-                if (size != null) size,
-                if (color != null) color,
-              ].join(' · ');
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          description.isEmpty
-                              ? 'Sin talla ni color'
-                              : description,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(
-                        width: 100,
-                        child: TextField(
-                          controller: _stockController(
-                            size,
-                            color,
-                          ),
-                          keyboardType: TextInputType.number,
-                          textAlign: TextAlign.center,
-                          decoration: const InputDecoration(
-                            labelText: 'Cantidad',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-
-            const SizedBox(height: 24),
-
-            SizedBox(
-              height: 58,
-              child: FilledButton.icon(
-                onPressed: saving ? null : _save,
-                icon: saving
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Icon(Icons.save),
-                label: Text(
-                  saving
-                      ? 'GUARDANDO...'
-                      : 'GUARDAR PRODUCTO',
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 30),
-          ],
-        ),
-      ),
-    );
-  }
-}
+                  onPressed:
