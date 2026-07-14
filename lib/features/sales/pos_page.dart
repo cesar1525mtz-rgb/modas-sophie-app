@@ -13,12 +13,10 @@ class PosPage extends StatefulWidget {
 
 class _PosPageState extends State<PosPage> {
   late final PosRepository repo;
-
   final search = TextEditingController();
 
   final List<CartItem> cart = [];
   List<Map<String, dynamic>> products = [];
-
   bool loading = false;
 
   double get total =>
@@ -27,11 +25,7 @@ class _PosPageState extends State<PosPage> {
   @override
   void initState() {
     super.initState();
-
-    repo = PosRepository(
-      Supabase.instance.client,
-    );
-
+    repo = PosRepository(Supabase.instance.client);
     find('');
   }
 
@@ -59,13 +53,59 @@ class _PosPageState extends State<PosPage> {
         return (product['stock'] as num).toInt();
       }
     }
-
     return 0;
+  }
+
+  List<_ProductGroup> get groupedProducts {
+    final groups = <String, _ProductGroup>{};
+
+    for (final row in products) {
+      final name = row['name'] as String;
+      final price = (row['sale_price'] as num).toDouble();
+      final key = '$name|$price';
+
+      groups.putIfAbsent(
+        key,
+        () => _ProductGroup(
+          name: name,
+          salePrice: price,
+          variants: [],
+        ),
+      );
+
+      groups[key]!.variants.add(row);
+    }
+
+    return groups.values.toList();
+  }
+
+  Future<void> openProduct(_ProductGroup product) async {
+    final available = product.variants.where((row) {
+      return (row['stock'] as num).toInt() > 0;
+    }).toList();
+
+    if (available.isEmpty) {
+      _message('Este producto está agotado');
+      return;
+    }
+
+    final selected =
+        await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _VariantSelector(
+        product: product,
+        available: available,
+      ),
+    );
+
+    if (selected != null) {
+      add(selected);
+    }
   }
 
   void add(Map<String, dynamic> row) {
     final id = row['variant_id'] as String;
-
     final stock = (row['stock'] as num).toInt();
 
     CartItem? existing;
@@ -81,6 +121,8 @@ class _PosPageState extends State<PosPage> {
       if (existing != null) {
         if (existing!.quantity < stock) {
           existing!.quantity++;
+        } else {
+          _message('No hay más existencia disponible');
         }
       } else if (stock > 0) {
         cart.add(
@@ -98,8 +140,16 @@ class _PosPageState extends State<PosPage> {
     });
   }
 
+  void _message(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final groups = groupedProducts;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Nueva venta'),
@@ -124,24 +174,27 @@ class _PosPageState extends State<PosPage> {
                     child: CircularProgressIndicator(),
                   )
                 : ListView.builder(
-                    itemCount: products.length,
+                    itemCount: groups.length,
                     itemBuilder: (_, i) {
-                      final p = products[i];
+                      final product = groups[i];
+
+                      final totalStock =
+                          product.variants.fold<int>(
+                        0,
+                        (sum, row) =>
+                            sum +
+                            (row['stock'] as num).toInt(),
+                      );
 
                       return ListTile(
-                        title: Text(
-                          p['name'] as String,
-                        ),
+                        title: Text(product.name),
                         subtitle: Text(
-                          '${p['sku']} · '
-                          '${p['size'] ?? '-'} · '
-                          '${p['color'] ?? '-'} · '
-                          'Stock ${p['stock']}',
+                          '$totalStock piezas disponibles',
                         ),
                         trailing: Text(
-                          '\$${(p['sale_price'] as num).toStringAsFixed(2)}',
+                          '\$${product.salePrice.toStringAsFixed(2)}',
                         ),
-                        onTap: () => add(p),
+                        onTap: () => openProduct(product),
                       );
                     },
                   ),
@@ -177,7 +230,6 @@ class _PosPageState extends State<PosPage> {
                         setState(() {
                           cart.clear();
                         });
-
                         await find(search.text);
                       } else {
                         setState(() {});
@@ -191,6 +243,208 @@ class _PosPageState extends State<PosPage> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _ProductGroup {
+  final String name;
+  final double salePrice;
+  final List<Map<String, dynamic>> variants;
+
+  _ProductGroup({
+    required this.name,
+    required this.salePrice,
+    required this.variants,
+  });
+}
+
+class _VariantSelector extends StatefulWidget {
+  final _ProductGroup product;
+  final List<Map<String, dynamic>> available;
+
+  const _VariantSelector({
+    required this.product,
+    required this.available,
+  });
+
+  @override
+  State<_VariantSelector> createState() =>
+      _VariantSelectorState();
+}
+
+class _VariantSelectorState extends State<_VariantSelector> {
+  String? selectedColor;
+  String? selectedSize;
+
+  List<String> get colors {
+    final result = <String>{};
+
+    for (final row in widget.available) {
+      final value = row['color']?.toString().trim();
+
+      if (value != null && value.isNotEmpty) {
+        result.add(value);
+      }
+    }
+
+    return result.toList();
+  }
+
+  List<String> get sizes {
+    final result = <String>{};
+
+    for (final row in widget.available) {
+      final color = row['color']?.toString().trim();
+
+      if (selectedColor != null &&
+          color != selectedColor) {
+        continue;
+      }
+
+      final value = row['size']?.toString().trim();
+
+      if (value != null && value.isNotEmpty) {
+        result.add(value);
+      }
+    }
+
+    return result.toList();
+  }
+
+  Map<String, dynamic>? get selectedVariant {
+    final availableColors = colors;
+    final availableSizes = sizes;
+
+    if (availableColors.isNotEmpty &&
+        selectedColor == null) {
+      return null;
+    }
+
+    if (availableSizes.isNotEmpty &&
+        selectedSize == null) {
+      return null;
+    }
+
+    for (final row in widget.available) {
+      final color = row['color']?.toString().trim();
+      final size = row['size']?.toString().trim();
+
+      final colorMatches = availableColors.isEmpty ||
+          color == selectedColor;
+      final sizeMatches =
+          availableSizes.isEmpty || size == selectedSize;
+
+      if (colorMatches && sizeMatches) {
+        return row;
+      }
+    }
+
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final availableColors = colors;
+    final availableSizes = sizes;
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          32,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.product.name,
+              style:
+                  Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '\$${widget.product.salePrice.toStringAsFixed(2)}',
+            ),
+            if (availableColors.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              const Text(
+                'Elige color',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: availableColors.map((color) {
+                  return ChoiceChip(
+                    label: Text(color),
+                    selected: selectedColor == color,
+                    onSelected: (_) {
+                      setState(() {
+                        selectedColor = color;
+                        selectedSize = null;
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+            if (selectedColor != null ||
+                availableColors.isEmpty) ...[
+              if (availableSizes.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                const Text(
+                  'Elige talla',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: availableSizes.map((size) {
+                    return ChoiceChip(
+                      label: Text(size),
+                      selected: selectedSize == size,
+                      onSelected: (_) {
+                        setState(() {
+                          selectedSize = size;
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+            ],
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: selectedVariant == null
+                    ? null
+                    : () {
+                        Navigator.pop(
+                          context,
+                          selectedVariant,
+                        );
+                      },
+                child: const Text(
+                  'AGREGAR AL CARRITO',
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -245,7 +499,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ),
         ),
       );
-
       return;
     }
 
@@ -281,7 +534,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ),
         ),
       );
-
       return;
     }
 
@@ -347,8 +599,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final cash =
         double.tryParse(received.text) ?? 0;
 
-    final change =
-        cash > total ? cash - total : 0;
+    final change = cash > total ? cash - total : 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -379,7 +630,17 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(item.sku),
+                          Text(
+                            [
+                              item.sku,
+                              if (item.color != null &&
+                                  item.color!.isNotEmpty)
+                                item.color!,
+                              if (item.size != null &&
+                                  item.size!.isNotEmpty)
+                                item.size!,
+                            ].join(' · '),
+                          ),
                           const SizedBox(height: 4),
                           Text(
                             '\$${item.unitPrice.toStringAsFixed(2)} c/u',
@@ -435,11 +696,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
           const SizedBox(height: 20),
           SegmentedButton<String>(
             segments: const [
-              ButtonSegment<String>(
+              ButtonSegment(
                 value: 'EFECTIVO',
                 label: Text('Efectivo'),
               ),
-              ButtonSegment<String>(
+              ButtonSegment(
                 value: 'TRANSFERENCIA',
                 label: Text('Transferencia'),
               ),
