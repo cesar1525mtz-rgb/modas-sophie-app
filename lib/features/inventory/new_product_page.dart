@@ -12,12 +12,11 @@ class _NewProductPageState extends State<NewProductPage> {
   final nameController = TextEditingController();
   final costController = TextEditingController();
   final priceController = TextEditingController();
-  final minimumController = TextEditingController();
+  final minimumController = TextEditingController(text: '2');
 
   final SupabaseClient client = Supabase.instance.client;
 
   bool saving = false;
-
   String category = 'Blusas';
 
   final List<String> categories = [
@@ -30,63 +29,13 @@ class _NewProductPageState extends State<NewProductPage> {
     'Otros',
   ];
 
-  final List<String> sizes = [
-    'CH',
-    'M',
-    'G',
-    'XG',
-  ];
-
-  final List<String> colors = [
-    'Azul',
-    'Verde',
-    'Rojo',
-    'Negro',
-    'Café',
-    'Blanco',
-    'Rosa',
-    'Beige',
-  ];
+  final List<String> sizes = ['Unitalla'];
+  final List<String> colors = [];
 
   final Set<String> selectedSizes = {};
   final Set<String> selectedColors = {};
 
   final Map<String, TextEditingController> stockControllers = {};
-
-  String variantKey(String size, String color) {
-    return '$size|$color';
-  }
-
-  TextEditingController stockController(
-    String size,
-    String color,
-  ) {
-    final key = variantKey(size, color);
-
-    if (!stockControllers.containsKey(key)) {
-      stockControllers[key] = TextEditingController(text: '0');
-    }
-
-    return stockControllers[key]!;
-  }
-
-  List<Map<String, dynamic>> get variants {
-    final result = <Map<String, dynamic>>[];
-
-    for (final size in selectedSizes) {
-      for (final color in selectedColors) {
-        final controller = stockController(size, color);
-
-        result.add({
-          'size': size,
-          'color': color,
-          'stock': int.tryParse(controller.text.trim()) ?? 0,
-        });
-      }
-    }
-
-    return result;
-  }
 
   @override
   void dispose() {
@@ -100,6 +49,136 @@ class _NewProductPageState extends State<NewProductPage> {
     }
 
     super.dispose();
+  }
+
+  String variantKey(String size, String color) {
+    return '$size|$color';
+  }
+
+  TextEditingController stockController(
+    String size,
+    String color,
+  ) {
+    final key = variantKey(size, color);
+
+    return stockControllers.putIfAbsent(
+      key,
+      () => TextEditingController(text: '0'),
+    );
+  }
+
+  List<Map<String, dynamic>> get variants {
+    final result = <Map<String, dynamic>>[];
+
+    for (final size in selectedSizes) {
+      for (final color in selectedColors) {
+        result.add({
+          'size': size,
+          'color': color,
+          'stock': int.tryParse(
+                stockController(size, color).text.trim(),
+              ) ??
+              0,
+        });
+      }
+    }
+
+    return result;
+  }
+
+  Future<void> addSize() async {
+    final value = await askValue(
+      'Agregar talla',
+      'Nombre de la talla',
+    );
+
+    if (value == null || value.trim().isEmpty) return;
+
+    final size = value.trim();
+
+    final exists = sizes.any(
+      (item) => item.toLowerCase() == size.toLowerCase(),
+    );
+
+    if (exists) {
+      showMessage('La talla ya existe');
+      return;
+    }
+
+    setState(() {
+      sizes.add(size);
+      selectedSizes.add(size);
+    });
+  }
+
+  Future<void> addColor() async {
+    final value = await askValue(
+      'Agregar color',
+      'Nombre del color',
+    );
+
+    if (value == null || value.trim().isEmpty) return;
+
+    final color = value.trim();
+
+    final exists = colors.any(
+      (item) => item.toLowerCase() == color.toLowerCase(),
+    );
+
+    if (exists) {
+      showMessage('El color ya existe');
+      return;
+    }
+
+    setState(() {
+      colors.add(color);
+      selectedColors.add(color);
+    });
+  }
+
+  Future<String?> askValue(
+    String title,
+    String label,
+  ) async {
+    final controller = TextEditingController();
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              labelText: label,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('CANCELAR'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  controller.text,
+                );
+              },
+              child: const Text('AGREGAR'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+
+    return result;
   }
 
   @override
@@ -116,6 +195,7 @@ class _NewProductPageState extends State<NewProductPage> {
             children: [
               TextField(
                 controller: nameController,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
                   labelText: 'Nombre del producto',
                   border: OutlineInputBorder(),
@@ -145,7 +225,8 @@ class _NewProductPageState extends State<NewProductPage> {
               const SizedBox(height: 16),
               TextField(
                 controller: costController,
-                keyboardType: const TextInputType.numberWithOptions(
+                keyboardType:
+                    const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 decoration: const InputDecoration(
@@ -156,7 +237,8 @@ class _NewProductPageState extends State<NewProductPage> {
               const SizedBox(height: 16),
               TextField(
                 controller: priceController,
-                keyboardType: const TextInputType.numberWithOptions(
+                keyboardType:
+                    const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 decoration: const InputDecoration(
@@ -173,7 +255,7 @@ class _NewProductPageState extends State<NewProductPage> {
                   border: OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
               const Text(
                 'Tallas',
                 style: TextStyle(
@@ -181,27 +263,34 @@ class _NewProductPageState extends State<NewProductPage> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: sizes.map((size) {
-                  return FilterChip(
-                    label: Text(size),
-                    selected: selectedSizes.contains(size),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          selectedSizes.add(size);
-                        } else {
-                          selectedSizes.remove(size);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
+                children: [
+                  ...sizes.map((size) {
+                    return FilterChip(
+                      label: Text(size),
+                      selected: selectedSizes.contains(size),
+                      onSelected: (selected) {
+                        setState(() {
+                          if (selected) {
+                            selectedSizes.add(size);
+                          } else {
+                            selectedSizes.remove(size);
+                          }
+                        });
+                      },
+                    );
+                  }),
+                  ActionChip(
+                    avatar: const Icon(Icons.add),
+                    label: const Text('AGREGAR TALLA'),
+                    onPressed: addSize,
+                  ),
+                ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
               const Text(
                 'Colores',
                 style: TextStyle(
@@ -209,29 +298,36 @@ class _NewProductPageState extends State<NewProductPage> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: colors.map((color) {
-                  return FilterChip(
-                    label: Text(color),
-                    selected: selectedColors.contains(color),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          selectedColors.add(color);
-                        } else {
-                          selectedColors.remove(color);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
+                children: [
+                  ...colors.map((color) {
+                    return FilterChip(
+                      label: Text(color),
+                      selected: selectedColors.contains(color),
+                      onSelected: (selected) {
+                        setState(() {
+                          if (selected) {
+                            selectedColors.add(color);
+                          } else {
+                            selectedColors.remove(color);
+                          }
+                        });
+                      },
+                    );
+                  }),
+                  ActionChip(
+                    avatar: const Icon(Icons.add),
+                    label: const Text('AGREGAR COLOR'),
+                    onPressed: addColor,
+                  ),
+                ],
               ),
-              const SizedBox(height: 24),
               if (selectedSizes.isNotEmpty &&
                   selectedColors.isNotEmpty) ...[
+                const SizedBox(height: 32),
                 const Text(
                   'Existencias por variante',
                   style: TextStyle(
@@ -240,9 +336,9 @@ class _NewProductPageState extends State<NewProductPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                ..._buildVariantFields(),
+                ...buildVariantFields(),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
@@ -262,11 +358,27 @@ class _NewProductPageState extends State<NewProductPage> {
     );
   }
 
-  List<Widget> _buildVariantFields() {
+  List<Widget> buildVariantFields() {
     final widgets = <Widget>[];
 
-    for (final size in selectedSizes) {
-      for (final color in selectedColors) {
+    for (final color in selectedColors) {
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(
+            top: 12,
+            bottom: 8,
+          ),
+          child: Text(
+            color.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+
+      for (final size in selectedSizes) {
         widgets.add(
           Card(
             child: Padding(
@@ -275,7 +387,7 @@ class _NewProductPageState extends State<NewProductPage> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Talla $size · $color',
+                      'Talla $size',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                       ),
@@ -284,8 +396,12 @@ class _NewProductPageState extends State<NewProductPage> {
                   SizedBox(
                     width: 100,
                     child: TextField(
-                      controller: stockController(size, color),
+                      controller: stockController(
+                        size,
+                        color,
+                      ),
                       keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
                       decoration: const InputDecoration(
                         labelText: 'Cantidad',
                         border: OutlineInputBorder(),
@@ -305,9 +421,18 @@ class _NewProductPageState extends State<NewProductPage> {
 
   Future<void> save() async {
     final name = nameController.text.trim();
-    final cost = double.tryParse(costController.text.trim());
-    final price = double.tryParse(priceController.text.trim());
-    final minimum = int.tryParse(minimumController.text.trim());
+
+    final cost = double.tryParse(
+      costController.text.trim(),
+    );
+
+    final price = double.tryParse(
+      priceController.text.trim(),
+    );
+
+    final minimum = int.tryParse(
+      minimumController.text.trim(),
+    );
 
     if (name.isEmpty ||
         cost == null ||
@@ -318,17 +443,21 @@ class _NewProductPageState extends State<NewProductPage> {
     }
 
     if (selectedSizes.isEmpty) {
-      showMessage('Selecciona al menos una talla');
+      showMessage('Selecciona una talla');
       return;
     }
 
     if (selectedColors.isEmpty) {
-      showMessage('Selecciona al menos un color');
+      showMessage('Agrega y selecciona un color');
       return;
     }
 
-    if (variants.every((variant) => variant['stock'] == 0)) {
-      showMessage('Agrega existencia a por lo menos una variante');
+    if (variants.every(
+      (variant) => variant['stock'] == 0,
+    )) {
+      showMessage(
+        'Agrega existencia a por lo menos una variante',
+      );
       return;
     }
 
