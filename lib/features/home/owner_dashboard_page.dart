@@ -4,6 +4,7 @@ import '../../models/app_user.dart';
 import '../finance/finance_page.dart';
 import '../inventory/inventory_page.dart';
 import '../sales/pos_page.dart';
+import '../sales/sales_history_page.dart';
 import '../users/users_page.dart';
 import 'dashboard_page.dart';
 
@@ -90,10 +91,37 @@ class _MorePage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Card(
+            child: ListTile(
+              leading: const Icon(
+                Icons.receipt_long_outlined,
+              ),
+              title: const Text(
+                'Historial de ventas',
+              ),
+              subtitle: const Text(
+                'Consultar ventas y sus detalles',
+              ),
+              trailing: const Icon(
+                Icons.chevron_right,
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        const SalesHistoryPage(),
+                  ),
+                );
+              },
+            ),
+          ),
           if (owner)
             Card(
               child: ListTile(
-                leading: const Icon(Icons.people_outline),
+                leading: const Icon(
+                  Icons.people_outline,
+                ),
                 title: const Text('Usuarios'),
                 subtitle: const Text(
                   'Administrar usuarios y vendedores',
@@ -105,7 +133,8 @@ class _MorePage extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const UsersPage(),
+                      builder: (_) =>
+                          const UsersPage(),
                     ),
                   );
                 },
