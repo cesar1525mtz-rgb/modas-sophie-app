@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../data/inventory_repository.dart';
-
 class NewProductPage extends StatefulWidget {
   const NewProductPage({super.key});
 
@@ -12,16 +10,16 @@ class NewProductPage extends StatefulWidget {
 
 class _NewProductPageState extends State<NewProductPage> {
   final formKey = GlobalKey<FormState>();
-  final name = TextEditingController();
-  final cost = TextEditingController();
-  final price = TextEditingController();
-  final minimumStock = TextEditingController(text: '2');
-  final size = TextEditingController();
-  final color = TextEditingController();
-  final stock = TextEditingController(text: '1');
 
-  late final InventoryRepository repository;
+  final nameController = TextEditingController();
+  final costController = TextEditingController();
+  final priceController = TextEditingController();
+  final minimumController = TextEditingController(text: '2');
+
+  final client = Supabase.instance.client;
+
   bool saving = false;
+
   String category = 'Blusas';
 
   final categories = const [
@@ -37,154 +35,161 @@ class _NewProductPageState extends State<NewProductPage> {
     'Cables',
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    repository = InventoryRepository(Supabase.instance.client);
+  final sizes = const [
+    'CH',
+    'M',
+    'G',
+    'XG',
+  ];
+
+  final colors = const [
+    'Azul',
+    'Verde',
+    'Rojo',
+    'Negro',
+    'Café',
+    'Blanco',
+    'Rosa',
+    'Beige',
+  ];
+
+  final Set<String> selectedSizes = {};
+  final Set<String> selectedColors = {};
+
+  final Map<String, TextEditingController> stockControllers = {};
+
+  String variantKey(String size, String color) {
+    return '$size|$color';
+  }
+
+  TextEditingController stockController(
+    String size,
+    String color,
+  ) {
+    final key = variantKey(size, color);
+
+    return stockControllers.putIfAbsent(
+      key,
+      () => TextEditingController(text: '0'),
+    );
+  }
+
+  List<Map<String, dynamic>> get variants {
+    final result = <Map<String, dynamic>>[];
+
+    for (final color in selectedColors) {
+      for (final size in selectedSizes) {
+        final stock = int.tryParse(
+              stockController(size, color).text.trim(),
+            ) ??
+            0;
+
+        result.add({
+          'size': size,
+          'color': color,
+          'stock': stock,
+        });
+      }
+    }
+
+    return result;
   }
 
   @override
   void dispose() {
-    name.dispose();
-    cost.dispose();
-    price.dispose();
-    minimumStock.dispose();
-    size.dispose();
-    color.dispose();
-    stock.dispose();
+    nameController.dispose();
+    costController.dispose();
+    priceController.dispose();
+    minimumController.dispose();
+
+    for (final controller in stockControllers.values) {
+      controller.dispose();
+    }
+
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nuevo producto')),
+      appBar: AppBar(
+        title: const Text('Nuevo producto'),
+      ),
       body: Form(
         key: formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             TextFormField(
-              controller: name,
-              decoration: const InputDecoration(labelText: 'Nombre'),
-              validator: _required,
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre',
+              ),
+              validator: requiredField,
             ),
             DropdownButtonFormField<String>(
               initialValue: category,
-              decoration: const InputDecoration(labelText: 'Categoría'),
+              decoration: const InputDecoration(
+                labelText: 'Categoría',
+              ),
               items: categories
                   .map(
-                    (item) => DropdownMenuItem<String>(
+                    (item) => DropdownMenuItem(
                       value: item,
                       child: Text(item),
                     ),
                   )
                   .toList(),
-              onChanged: saving
-                  ? null
-                  : (value) => setState(() => category = value!),
+              onChanged: (value) {
+                if (value == null) return;
+
+                setState(() {
+                  category = value;
+                });
+              },
             ),
             TextFormField(
-              controller: cost,
+              controller: costController,
               keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration:
-                  const InputDecoration(labelText: 'Costo de compra'),
-              validator: _required,
+                  const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Costo de compra',
+              ),
+              validator: requiredField,
             ),
             TextFormField(
-              controller: price,
+              controller: priceController,
               keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration:
-                  const InputDecoration(labelText: 'Precio de venta'),
-              validator: _required,
+                  const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Precio de venta',
+              ),
+              validator: requiredField,
             ),
             TextFormField(
-              controller: minimumStock,
+              controller: minimumController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Stock mínimo'),
-            ),
-            const Divider(height: 32),
-            Text(
-              'Primera variante',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            TextFormField(
-              controller: size,
-              decoration:
-                  const InputDecoration(labelText: 'Talla (opcional)'),
-            ),
-            TextFormField(
-              controller: color,
-              decoration:
-                  const InputDecoration(labelText: 'Color (opcional)'),
-            ),
-            TextFormField(
-              controller: stock,
-              keyboardType: TextInputType.number,
-              decoration:
-                  const InputDecoration(labelText: 'Cantidad inicial'),
+              decoration: const InputDecoration(
+                labelText: 'Stock mínimo',
+              ),
             ),
             const SizedBox(height: 24),
-            FilledButton(
-              onPressed: saving ? null : _save,
-              child: saving
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('GUARDAR PRODUCTO'),
+            Text(
+              'Selecciona tallas',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String? _required(String? value) {
-    return value == null || value.trim().isEmpty
-        ? 'Campo obligatorio'
-        : null;
-  }
-
-  Future<void> _save() async {
-    if (!formKey.currentState!.validate()) return;
-
-    final parsedCost = double.tryParse(cost.text.trim());
-    final parsedPrice = double.tryParse(price.text.trim());
-
-    if (parsedCost == null || parsedPrice == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Revisa costo y precio de venta')),
-      );
-      return;
-    }
-
-    setState(() => saving = true);
-
-    try {
-      await repository.createProduct(
-        categoryName: category,
-        name: name.text.trim(),
-        cost: parsedCost,
-        salePrice: parsedPrice,
-        minimumStock: int.tryParse(minimumStock.text.trim()) ?? 0,
-        size: size.text.trim().isEmpty ? null : size.text.trim(),
-        color: color.text.trim().isEmpty ? null : color.text.trim(),
-        initialStock: int.tryParse(stock.text.trim()) ?? 0,
-      );
-
-      if (!mounted) return;
-      Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al guardar: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => saving = false);
-    }
-  }
-}
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: sizes.map((size) {
+                return FilterChip(
+                  label: Text(size),
+                  selected: selectedSizes.contains(size),
+                  onSelected: (
