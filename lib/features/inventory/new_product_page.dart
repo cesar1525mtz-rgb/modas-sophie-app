@@ -24,6 +24,7 @@ class _NewProductPageState extends State<NewProductPage> {
   final Map<String, TextEditingController> stockControllers = {};
 
   bool saving = false;
+  bool savingCategory = false;
 
   SupabaseClient get client => Supabase.instance.client;
 
@@ -124,7 +125,25 @@ class _NewProductPageState extends State<NewProductPage> {
     return value;
   }
 
+  String _createSkuPrefix(String name) {
+    final clean = name
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9ÁÉÍÓÚÜÑ]'), '');
+
+    if (clean.isEmpty) {
+      return 'CAT';
+    }
+
+    if (clean.length >= 3) {
+      return clean.substring(0, 3);
+    }
+
+    return clean.padRight(3, 'X');
+  }
+
   Future<void> _addCategory() async {
+    if (savingCategory) return;
+
     final value = await _askValue(
       title: 'Agregar categoría',
       label: 'Nombre de la categoría',
@@ -133,9 +152,101 @@ class _NewProductPageState extends State<NewProductPage> {
 
     if (value == null || value.trim().isEmpty) return;
 
+    final clean = value.trim();
+
     setState(() {
-      categoryController.text = value.trim();
+      savingCategory = true;
     });
+
+    try {
+      final existingCategories = await client
+          .from('categories')
+          .select('id, business_id, name, sku_prefix')
+          .eq('active', true);
+
+      if (existingCategories.isEmpty) {
+        throw Exception(
+          'No se encontró el negocio de Modas Sophie',
+        );
+      }
+
+      final businessId =
+          existingCategories.first['business_id'].toString();
+
+      Map<String, dynamic>? existingCategory;
+
+      for (final item in existingCategories) {
+        final itemName =
+            (item['name'] ?? '').toString().trim().toLowerCase();
+
+        if (itemName == clean.toLowerCase()) {
+          existingCategory =
+              Map<String, dynamic>.from(item);
+          break;
+        }
+      }
+
+      if (existingCategory != null) {
+        if (!mounted) return;
+
+        setState(() {
+          categoryController.text =
+              existingCategory!['name'].toString();
+        });
+
+        _message('La categoría ya existe y fue seleccionada');
+        return;
+      }
+
+      final basePrefix = _createSkuPrefix(clean);
+      String skuPrefix = basePrefix;
+      int suffix = 1;
+
+      final usedPrefixes = existingCategories
+          .map(
+            (item) => (item['sku_prefix'] ?? '')
+                .toString()
+                .toUpperCase(),
+          )
+          .toSet();
+
+      while (usedPrefixes.contains(skuPrefix)) {
+        skuPrefix = '$basePrefix$suffix';
+        suffix++;
+      }
+
+      final inserted = await client
+          .from('categories')
+          .insert({
+            'business_id': businessId,
+            'name': clean,
+            'sku_prefix': skuPrefix,
+            'active': true,
+          })
+          .select('id, name, sku_prefix')
+          .single();
+
+      if (!mounted) return;
+
+      setState(() {
+        categoryController.text =
+            inserted['name'].toString();
+      });
+
+      _message('Categoría guardada correctamente');
+    } catch (e) {
+      if (!mounted) return;
+
+      _message(
+        'No fue posible guardar la categoría: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          savingCategory = false;
+        });
+      }
+    }
   }
 
   Future<void> _addSize() async {
@@ -305,9 +416,22 @@ class _NewProductPageState extends State<NewProductPage> {
             ),
 
             TextButton.icon(
-              onPressed: _addCategory,
-              icon: const Icon(Icons.add),
-              label: const Text('AGREGAR CATEGORÍA'),
+              onPressed:
+                  savingCategory ? null : _addCategory,
+              icon: savingCategory
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.add),
+              label: Text(
+                savingCategory
+                    ? 'GUARDANDO CATEGORÍA...'
+                    : 'AGREGAR CATEGORÍA',
+              ),
             ),
 
             const SizedBox(height: 16),
