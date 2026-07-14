@@ -15,25 +15,31 @@ class _NewProductPageState extends State<NewProductPage> {
   final priceController = TextEditingController();
   final minimumController = TextEditingController(text: '1');
 
-  final List<String> sizes = ['Unitalla'];
-  final List<String> colors = [];
-  final Set<String> selectedSizes = {'Unitalla'};
-  final Set<String> selectedColors = {};
   final Map<String, TextEditingController> stockControllers = {};
 
   List<Map<String, dynamic>> categories = [];
+  List<Map<String, dynamic>> sizes = [];
+  List<Map<String, dynamic>> colors = [];
+
+  final Set<String> selectedSizes = {};
+  final Set<String> selectedColors = {};
 
   bool saving = false;
-  bool loadingCategories = true;
+  bool loading = true;
   bool savingCategory = false;
+  bool savingSize = false;
+  bool savingColor = false;
+
   String? deletingCategoryId;
+  String? deletingSizeId;
+  String? deletingColorId;
 
   SupabaseClient get client => Supabase.instance.client;
 
   @override
   void initState() {
     super.initState();
-    _loadCategories();
+    _loadCatalogs();
   }
 
   @override
@@ -51,71 +57,73 @@ class _NewProductPageState extends State<NewProductPage> {
     super.dispose();
   }
 
-  String _variantKey(String? size, String? color) {
-    return '${size ?? ''}|${color ?? ''}';
-  }
-
-  TextEditingController _stockController(
-    String? size,
-    String? color,
-  ) {
-    return stockControllers.putIfAbsent(
-      _variantKey(size, color),
-      () => TextEditingController(text: '0'),
-    );
-  }
-
-  List<Map<String, String?>> get combinations {
-    final activeSizes = selectedSizes.isEmpty
-        ? <String?>[null]
-        : selectedSizes.map<String?>((e) => e).toList();
-
-    final activeColors = selectedColors.isEmpty
-        ? <String?>[null]
-        : selectedColors.map<String?>((e) => e).toList();
-
-    final result = <Map<String, String?>>[];
-
-    for (final size in activeSizes) {
-      for (final color in activeColors) {
-        result.add({
-          'size': size,
-          'color': color,
-        });
-      }
-    }
-
-    return result;
-  }
-
   void _message(String text) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(text)),
     );
   }
 
-  Future<void> _loadCategories() async {
+  Future<void> _loadCatalogs() async {
+    if (mounted) {
+      setState(() {
+        loading = true;
+      });
+    }
+
     try {
-      final response = await client
+      final categoriesResponse = await client
           .from('categories')
           .select('id,business_id,name,sku_prefix,active')
           .eq('active', true)
           .order('name');
 
+      final sizesResponse = await client
+          .from('sizes')
+          .select('id,business_id,name,active')
+          .eq('active', true)
+          .order('name');
+
+      final colorsResponse = await client
+          .from('colors')
+          .select('id,business_id,name,active')
+          .eq('active', true)
+          .order('name');
+
       if (!mounted) return;
 
+      final loadedSizes =
+          List<Map<String, dynamic>>.from(sizesResponse);
+
       setState(() {
-        categories = List<Map<String, dynamic>>.from(response);
-        loadingCategories = false;
+        categories =
+            List<Map<String, dynamic>>.from(categoriesResponse);
+
+        sizes = loadedSizes;
+
+        colors =
+            List<Map<String, dynamic>>.from(colorsResponse);
+
+        if (selectedSizes.isEmpty) {
+          for (final size in loadedSizes) {
+            final name = (size['name'] ?? '').toString();
+
+            if (name.toLowerCase() == 'unitalla') {
+              selectedSizes.add(name);
+              break;
+            }
+          }
+        }
+
+        loading = false;
       });
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
-        loadingCategories = false;
+        loading = false;
       });
 
-      _message('No fue posible cargar categorías: $e');
+      _message('No fue posible cargar los catálogos: $e');
     }
   }
 
@@ -160,7 +168,41 @@ class _NewProductPageState extends State<NewProductPage> {
     );
 
     controller.dispose();
+
     return value;
+  }
+
+  Future<bool> _confirmDelete(
+    String title,
+    String name,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(
+            '¿Seguro que deseas eliminar "$name"?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('CANCELAR'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('ELIMINAR'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed == true;
   }
 
   String _createSkuPrefix(String name) {
@@ -174,15 +216,39 @@ class _NewProductPageState extends State<NewProductPage> {
         .replaceAll('Ü', 'U')
         .replaceAll('Ñ', 'N');
 
-    clean = clean.replaceAll(RegExp(r'[^A-Z0-9]'), '');
+    clean = clean.replaceAll(
+      RegExp(r'[^A-Z0-9]'),
+      '',
+    );
 
     if (clean.isEmpty) return 'CAT';
-    if (clean.length >= 3) return clean.substring(0, 3);
+
+    if (clean.length >= 3) {
+      return clean.substring(0, 3);
+    }
 
     return clean.padRight(3, 'X');
   }
 
-  void _selectCategory(Map<String, dynamic> category) {
+  String? get _businessId {
+    if (categories.isNotEmpty) {
+      return categories.first['business_id']?.toString();
+    }
+
+    if (sizes.isNotEmpty) {
+      return sizes.first['business_id']?.toString();
+    }
+
+    if (colors.isNotEmpty) {
+      return colors.first['business_id']?.toString();
+    }
+
+    return null;
+  }
+
+  void _selectCategory(
+    Map<String, dynamic> category,
+  ) {
     setState(() {
       categoryController.text =
           (category['name'] ?? '').toString();
@@ -208,13 +274,22 @@ class _NewProductPageState extends State<NewProductPage> {
 
       if (name.toLowerCase() == clean.toLowerCase()) {
         _selectCategory(category);
-        _message('La categoría ya existe y fue seleccionada');
+
+        _message(
+          'La categoría ya existe y fue seleccionada',
+        );
+
         return;
       }
     }
 
-    if (categories.isEmpty) {
-      _message('No se encontró el negocio de Modas Sophie');
+    final businessId = _businessId;
+
+    if (businessId == null) {
+      _message(
+        'No se encontró el negocio de Modas Sophie',
+      );
+
       return;
     }
 
@@ -223,9 +298,6 @@ class _NewProductPageState extends State<NewProductPage> {
     });
 
     try {
-      final businessId =
-          categories.first['business_id'].toString();
-
       final basePrefix = _createSkuPrefix(clean);
       var skuPrefix = basePrefix;
       var suffix = 1;
@@ -251,7 +323,9 @@ class _NewProductPageState extends State<NewProductPage> {
             'sku_prefix': skuPrefix,
             'active': true,
           })
-          .select('id,business_id,name,sku_prefix,active')
+          .select(
+            'id,business_id,name,sku_prefix,active',
+          )
           .single();
 
       if (!mounted) return;
@@ -266,7 +340,9 @@ class _NewProductPageState extends State<NewProductPage> {
               .toString()
               .toLowerCase()
               .compareTo(
-                (b['name'] ?? '').toString().toLowerCase(),
+                (b['name'] ?? '')
+                    .toString()
+                    .toLowerCase(),
               ),
         );
 
@@ -296,40 +372,22 @@ class _NewProductPageState extends State<NewProductPage> {
     final id = category['id'].toString();
     final name = (category['name'] ?? '').toString();
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Eliminar categoría'),
-          content: Text(
-            '¿Seguro que deseas eliminar "$name"?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
-              child: const Text('CANCELAR'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              child: const Text('ELIMINAR'),
-            ),
-          ],
-        );
-      },
+    final confirmed = await _confirmDelete(
+      'Eliminar categoría',
+      name,
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     setState(() {
       deletingCategoryId = id;
     });
 
     try {
-      await client.from('categories').delete().eq('id', id);
+      await client
+          .from('categories')
+          .delete()
+          .eq('id', id);
 
       if (!mounted) return;
 
@@ -338,7 +396,9 @@ class _NewProductPageState extends State<NewProductPage> {
           (item) => item['id'].toString() == id,
         );
 
-        if (categoryController.text.trim().toLowerCase() ==
+        if (categoryController.text
+                .trim()
+                .toLowerCase() ==
             name.trim().toLowerCase()) {
           categoryController.clear();
         }
@@ -350,7 +410,7 @@ class _NewProductPageState extends State<NewProductPage> {
 
       if (e.code == '23503') {
         _message(
-          'Esta categoría tiene productos y no se puede eliminar',
+          'Esta categoría contiene productos y no se puede eliminar',
         );
       } else {
         _message(
@@ -373,6 +433,8 @@ class _NewProductPageState extends State<NewProductPage> {
   }
 
   Future<void> _addSize() async {
+    if (savingSize) return;
+
     final value = await _askValue(
       title: 'Agregar talla',
       label: 'Talla',
@@ -383,19 +445,151 @@ class _NewProductPageState extends State<NewProductPage> {
 
     final clean = value.trim();
 
-    if (sizes.any(
-      (item) => item.toLowerCase() == clean.toLowerCase(),
-    )) {
+    for (final size in sizes) {
+      final name = (size['name'] ?? '').toString().trim();
+
+      if (name.toLowerCase() == clean.toLowerCase()) {
+        setState(() {
+          selectedSizes.add(name);
+        });
+
+        _message(
+          'La talla ya existe y fue seleccionada',
+        );
+
+        return;
+      }
+    }
+
+    final businessId = _businessId;
+
+    if (businessId == null) {
+      _message(
+        'No se encontró el negocio de Modas Sophie',
+      );
+
       return;
     }
 
     setState(() {
-      sizes.add(clean);
-      selectedSizes.add(clean);
+      savingSize = true;
     });
+
+    try {
+      final inserted = await client
+          .from('sizes')
+          .insert({
+            'business_id': businessId,
+            'name': clean,
+            'active': true,
+          })
+          .select('id,business_id,name,active')
+          .single();
+
+      if (!mounted) return;
+
+      setState(() {
+        sizes.add(
+          Map<String, dynamic>.from(inserted),
+        );
+
+        sizes.sort(
+          (a, b) => (a['name'] ?? '')
+              .toString()
+              .toLowerCase()
+              .compareTo(
+                (b['name'] ?? '')
+                    .toString()
+                    .toLowerCase(),
+              ),
+        );
+
+        selectedSizes.add(
+          inserted['name'].toString(),
+        );
+      });
+
+      _message('Talla guardada correctamente');
+    } catch (e) {
+      if (!mounted) return;
+
+      _message(
+        'No fue posible guardar la talla: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          savingSize = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _deleteSize(
+    Map<String, dynamic> size,
+  ) async {
+    final id = size['id'].toString();
+    final name = (size['name'] ?? '').toString();
+
+    final confirmed = await _confirmDelete(
+      'Eliminar talla',
+      name,
+    );
+
+    if (!confirmed) return;
+
+    setState(() {
+      deletingSizeId = id;
+    });
+
+    try {
+      final used = await client
+          .from('product_variants')
+          .select('id')
+          .eq('size', name)
+          .limit(1);
+
+      if (used.isNotEmpty) {
+        if (!mounted) return;
+
+        _message(
+          'Esta talla está usada en productos y no se puede eliminar',
+        );
+
+        return;
+      }
+
+      await client.from('sizes').delete().eq('id', id);
+
+      if (!mounted) return;
+
+      setState(() {
+        sizes.removeWhere(
+          (item) => item['id'].toString() == id,
+        );
+
+        selectedSizes.remove(name);
+      });
+
+      _message('Talla eliminada correctamente');
+    } catch (e) {
+      if (!mounted) return;
+
+      _message(
+        'No fue posible eliminar la talla: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          deletingSizeId = null;
+        });
+      }
+    }
   }
 
   Future<void> _addColor() async {
+    if (savingColor) return;
+
     final value = await _askValue(
       title: 'Agregar color',
       label: 'Color',
@@ -406,16 +600,184 @@ class _NewProductPageState extends State<NewProductPage> {
 
     final clean = value.trim();
 
-    if (colors.any(
-      (item) => item.toLowerCase() == clean.toLowerCase(),
-    )) {
+    for (final color in colors) {
+      final name =
+          (color['name'] ?? '').toString().trim();
+
+      if (name.toLowerCase() == clean.toLowerCase()) {
+        setState(() {
+          selectedColors.add(name);
+        });
+
+        _message(
+          'El color ya existe y fue seleccionado',
+        );
+
+        return;
+      }
+    }
+
+    final businessId = _businessId;
+
+    if (businessId == null) {
+      _message(
+        'No se encontró el negocio de Modas Sophie',
+      );
+
       return;
     }
 
     setState(() {
-      colors.add(clean);
-      selectedColors.add(clean);
+      savingColor = true;
     });
+
+    try {
+      final inserted = await client
+          .from('colors')
+          .insert({
+            'business_id': businessId,
+            'name': clean,
+            'active': true,
+          })
+          .select('id,business_id,name,active')
+          .single();
+
+      if (!mounted) return;
+
+      setState(() {
+        colors.add(
+          Map<String, dynamic>.from(inserted),
+        );
+
+        colors.sort(
+          (a, b) => (a['name'] ?? '')
+              .toString()
+              .toLowerCase()
+              .compareTo(
+                (b['name'] ?? '')
+                    .toString()
+                    .toLowerCase(),
+              ),
+        );
+
+        selectedColors.add(
+          inserted['name'].toString(),
+        );
+      });
+
+      _message('Color guardado correctamente');
+    } catch (e) {
+      if (!mounted) return;
+
+      _message(
+        'No fue posible guardar el color: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          savingColor = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _deleteColor(
+    Map<String, dynamic> color,
+  ) async {
+    final id = color['id'].toString();
+    final name = (color['name'] ?? '').toString();
+
+    final confirmed = await _confirmDelete(
+      'Eliminar color',
+      name,
+    );
+
+    if (!confirmed) return;
+
+    setState(() {
+      deletingColorId = id;
+    });
+
+    try {
+      final used = await client
+          .from('product_variants')
+          .select('id')
+          .eq('color', name)
+          .limit(1);
+
+      if (used.isNotEmpty) {
+        if (!mounted) return;
+
+        _message(
+          'Este color está usado en productos y no se puede eliminar',
+        );
+
+        return;
+      }
+
+      await client.from('colors').delete().eq('id', id);
+
+      if (!mounted) return;
+
+      setState(() {
+        colors.removeWhere(
+          (item) => item['id'].toString() == id,
+        );
+
+        selectedColors.remove(name);
+      });
+
+      _message('Color eliminado correctamente');
+    } catch (e) {
+      if (!mounted) return;
+
+      _message(
+        'No fue posible eliminar el color: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          deletingColorId = null;
+        });
+      }
+    }
+  }
+
+  String _variantKey(String? size, String? color) {
+    return '${size ?? ''}|${color ?? ''}';
+  }
+
+  TextEditingController _stockController(
+    String? size,
+    String? color,
+  ) {
+    return stockControllers.putIfAbsent(
+      _variantKey(size, color),
+      () => TextEditingController(text: '0'),
+    );
+  }
+
+  List<Map<String, String?>> get combinations {
+    final activeSizes = selectedSizes.isEmpty
+        ? <String?>[null]
+        : selectedSizes.map<String?>((e) => e).toList();
+
+    final activeColors = selectedColors.isEmpty
+        ? <String?>[null]
+        : selectedColors.map<String?>((e) => e).toList();
+
+    final result = <Map<String, String?>>[];
+
+    for (final size in activeSizes) {
+      for (final color in activeColors) {
+        result.add({
+          'size': size,
+          'color': color,
+        });
+      }
+    }
+
+    return result;
   }
 
   Future<void> _save() async {
@@ -425,11 +787,15 @@ class _NewProductPageState extends State<NewProductPage> {
     final category = categoryController.text.trim();
 
     final cost = double.tryParse(
-      costController.text.trim().replaceAll(',', '.'),
+      costController.text
+          .trim()
+          .replaceAll(',', '.'),
     );
 
     final price = double.tryParse(
-      priceController.text.trim().replaceAll(',', '.'),
+      priceController.text
+          .trim()
+          .replaceAll(',', '.'),
     );
 
     final minimum = int.tryParse(
@@ -441,7 +807,10 @@ class _NewProductPageState extends State<NewProductPage> {
         cost == null ||
         price == null ||
         minimum == null) {
-      _message('Completa correctamente todos los datos');
+      _message(
+        'Completa correctamente todos los datos',
+      );
+
       return;
     }
 
@@ -450,7 +819,10 @@ class _NewProductPageState extends State<NewProductPage> {
       final color = variant['color'];
 
       final stock = int.tryParse(
-            _stockController(size, color).text.trim(),
+            _stockController(
+              size,
+              color,
+            ).text.trim(),
           ) ??
           0;
 
@@ -481,6 +853,7 @@ class _NewProductPageState extends State<NewProductPage> {
       if (!mounted) return;
 
       _message('Producto guardado');
+
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -496,24 +869,6 @@ class _NewProductPageState extends State<NewProductPage> {
   }
 
   Widget _categoriesSection() {
-    if (loadingCategories) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    if (categories.isEmpty) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('No hay categorías disponibles'),
-        ),
-      );
-    }
-
     return Column(
       children: categories.map((category) {
         final id = category['id'].toString();
@@ -556,12 +911,118 @@ class _NewProductPageState extends State<NewProductPage> {
                     ),
                   )
                 : IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => _deleteCategory(category),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                    ),
+                    onPressed: () {
+                      _deleteCategory(category);
+                    },
                   ),
           ),
         );
       }).toList(),
+    );
+  }
+
+  Widget _sizesSection() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        ...sizes.map((size) {
+          final id = size['id'].toString();
+          final name = (size['name'] ?? '').toString();
+          final deleting = deletingSizeId == id;
+
+          return InputChip(
+            label: Text(name),
+            selected: selectedSizes.contains(name),
+            onSelected: deleting
+                ? null
+                : (selected) {
+                    setState(() {
+                      if (selected) {
+                        selectedSizes.add(name);
+                      } else {
+                        selectedSizes.remove(name);
+                      }
+                    });
+                  },
+            onDeleted: deleting
+                ? null
+                : () {
+                    _deleteSize(size);
+                  },
+            deleteIcon: deleting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(Icons.close),
+          );
+        }),
+        ActionChip(
+          avatar: const Icon(Icons.add),
+          label: Text(
+            savingSize ? 'Guardando...' : 'Agregar talla',
+          ),
+          onPressed: savingSize ? null : _addSize,
+        ),
+      ],
+    );
+  }
+
+  Widget _colorsSection() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        ...colors.map((color) {
+          final id = color['id'].toString();
+          final name = (color['name'] ?? '').toString();
+          final deleting = deletingColorId == id;
+
+          return InputChip(
+            label: Text(name),
+            selected: selectedColors.contains(name),
+            onSelected: deleting
+                ? null
+                : (selected) {
+                    setState(() {
+                      if (selected) {
+                        selectedColors.add(name);
+                      } else {
+                        selectedColors.remove(name);
+                      }
+                    });
+                  },
+            onDeleted: deleting
+                ? null
+                : () {
+                    _deleteColor(color);
+                  },
+            deleteIcon: deleting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(Icons.close),
+          );
+        }),
+        ActionChip(
+          avatar: const Icon(Icons.add),
+          label: Text(
+            savingColor ? 'Guardando...' : 'Agregar color',
+          ),
+          onPressed: savingColor ? null : _addColor,
+        ),
+      ],
     );
   }
 
@@ -596,7 +1057,10 @@ class _NewProductPageState extends State<NewProductPage> {
                 SizedBox(
                   width: 100,
                   child: TextField(
-                    controller: _stockController(size, color),
+                    controller: _stockController(
+                      size,
+                      color,
+                    ),
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
                     decoration: const InputDecoration(
@@ -620,202 +1084,157 @@ class _NewProductPageState extends State<NewProductPage> {
         title: const Text('Nuevo producto'),
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del producto',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: categoryController,
-              readOnly: true,
-              decoration: const InputDecoration(
-                labelText: 'Categoría seleccionada',
-                hintText: 'Selecciona una categoría',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Categorías',
+        child: loading
+            ? const Center(
+                child: CircularProgressIndicator(),
+              )
+            : ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del producto',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: categoryController,
+                    readOnly: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Categoría seleccionada',
+                      hintText: 'Selecciona una categoría',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Categorías',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _loadCatalogs,
+                        icon: const Icon(Icons.refresh),
+                      ),
+                    ],
+                  ),
+                  _categoriesSection(),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 50,
+                    child: OutlinedButton.icon(
+                      onPressed: savingCategory
+                          ? null
+                          : _addCategory,
+                      icon: const Icon(Icons.add),
+                      label: Text(
+                        savingCategory
+                            ? 'GUARDANDO...'
+                            : 'AGREGAR CATEGORÍA',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: costController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Costo',
+                      prefixText: '\$ ',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: priceController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Precio de venta',
+                      prefixText: '\$ ',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: minimumController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Stock mínimo',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  const Text(
+                    'Tallas',
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                ),
-                IconButton(
-                  onPressed: _loadCategories,
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-            _categoriesSection(),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 50,
-              child: OutlinedButton.icon(
-                onPressed:
-                    savingCategory ? null : _addCategory,
-                icon: const Icon(Icons.add),
-                label: Text(
-                  savingCategory
-                      ? 'GUARDANDO...'
-                      : 'AGREGAR CATEGORÍA',
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: costController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Costo',
-                prefixText: '\$ ',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: priceController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Precio de venta',
-                prefixText: '\$ ',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: minimumController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Stock mínimo',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 28),
-            const Text(
-              'Tallas',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ...sizes.map(
-                  (size) => FilterChip(
-                    label: Text(size),
-                    selected: selectedSizes.contains(size),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          selectedSizes.add(size);
-                        } else {
-                          selectedSizes.remove(size);
-                        }
-                      });
-                    },
+                  const SizedBox(height: 10),
+                  _sizesSection(),
+                  const SizedBox(height: 28),
+                  const Text(
+                    'Colores',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.add),
-                  label: const Text('Agregar talla'),
-                  onPressed: _addSize,
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
-            const Text(
-              'Colores',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ...colors.map(
-                  (color) => FilterChip(
-                    label: Text(color),
-                    selected: selectedColors.contains(color),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          selectedColors.add(color);
-                        } else {
-                          selectedColors.remove(color);
-                        }
-                      });
-                    },
+                  const SizedBox(height: 10),
+                  _colorsSection(),
+                  const SizedBox(height: 28),
+                  const Text(
+                    'Existencias por variante',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.add),
-                  label: const Text('Agregar color'),
-                  onPressed: _addColor,
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
-            const Text(
-              'Existencias por variante',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Indica cuántas piezas tienes de cada combinación.',
+                  ),
+                  const SizedBox(height: 16),
+                  _variantsSection(),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    height: 58,
+                    child: FilledButton.icon(
+                      onPressed: saving ? null : _save,
+                      icon: saving
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.save),
+                      label: Text(
+                        saving
+                            ? 'GUARDANDO...'
+                            : 'GUARDAR PRODUCTO',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                ],
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Indica cuántas piezas tienes de cada combinación.',
-            ),
-            const SizedBox(height: 16),
-            _variantsSection(),
-            const SizedBox(height: 24),
-            SizedBox(
-              height: 58,
-              child: FilledButton.icon(
-                onPressed: saving ? null : _save,
-                icon: saving
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Icon(Icons.save),
-                label: Text(
-                  saving
-                      ? 'GUARDANDO...'
-                      : 'GUARDAR PRODUCTO',
-                ),
-              ),
-            ),
-            const SizedBox(height: 30),
-          ],
-        ),
       ),
     );
   }
