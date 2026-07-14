@@ -77,7 +77,9 @@ class _SalesHistoryPageState
         onRefresh: () async {
           refresh();
 
-          await future;
+          try {
+            await future;
+          } catch (_) {}
         },
         child: FutureBuilder<List<Map<String, dynamic>>>(
           future: future,
@@ -94,16 +96,46 @@ class _SalesHistoryPageState
                 physics:
                     const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(24),
-                children: const [
-                  SizedBox(height: 120),
-                  Icon(
+                children: [
+                  const SizedBox(height: 80),
+                  const Icon(
                     Icons.error_outline,
-                    size: 48,
+                    size: 56,
                   ),
-                  SizedBox(height: 16),
-                  Center(
+                  const SizedBox(height: 16),
+                  const Center(
                     child: Text(
                       'No se pudo cargar el historial de ventas.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'ERROR REAL DE SUPABASE:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    snapshot.error.toString(),
+                    style: const TextStyle(
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: refresh,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text(
+                        'VOLVER A INTENTAR',
+                      ),
                     ),
                   ),
                 ],
