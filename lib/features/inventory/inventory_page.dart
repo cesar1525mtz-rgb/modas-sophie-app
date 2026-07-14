@@ -122,7 +122,9 @@ class _InventoryPageState extends State<InventoryPage> {
           ),
           const SizedBox(height: 16),
           const Center(
-            child: Text('No se pudo cargar el inventario'),
+            child: Text(
+              'No se pudo cargar el inventario',
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -145,7 +147,9 @@ class _InventoryPageState extends State<InventoryPage> {
         children: const [
           SizedBox(height: 180),
           Center(
-            child: Text('Aún no hay productos registrados.'),
+            child: Text(
+              'Aún no hay productos registrados.',
+            ),
           ),
         ],
       );
@@ -167,7 +171,8 @@ class _InventoryPageState extends State<InventoryPage> {
             ),
             title: Text(product.name),
             subtitle: Text(
-              '${product.skuBase} · ${product.totalStock} piezas',
+              '${product.skuBase} · '
+              '${product.totalStock} piezas',
             ),
             trailing: lowStock
                 ? const Icon(Icons.warning_amber)
@@ -207,7 +212,8 @@ class _InventoryPageState extends State<InventoryPage> {
               children: [
                 Text(
                   product.name,
-                  style: Theme.of(context).textTheme.headlineSmall,
+                  style:
+                      Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 8),
                 Text(product.skuBase),
@@ -251,10 +257,6 @@ class _InventoryPageState extends State<InventoryPage> {
                       trailing: Text(
                         '${variant.stock} pzas.',
                       ),
-                      onTap: () async {
-                        Navigator.pop(sheetContext);
-                        await _editVariantStock(variant);
-                      },
                     ),
                   );
                 }),
@@ -267,7 +269,9 @@ class _InventoryPageState extends State<InventoryPage> {
                       _editProduct(product);
                     },
                     icon: const Icon(Icons.edit),
-                    label: const Text('EDITAR PRODUCTO'),
+                    label: const Text(
+                      'EDITAR PRODUCTO',
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -279,7 +283,9 @@ class _InventoryPageState extends State<InventoryPage> {
                       _deleteProduct(product);
                     },
                     icon: const Icon(Icons.delete_outline),
-                    label: const Text('ELIMINAR PRODUCTO'),
+                    label: const Text(
+                      'ELIMINAR PRODUCTO',
+                    ),
                   ),
                 ),
               ],
@@ -293,11 +299,13 @@ class _InventoryPageState extends State<InventoryPage> {
   String _variantDescription(ProductVariant variant) {
     final details = <String>[];
 
-    if (variant.size != null && variant.size!.isNotEmpty) {
+    if (variant.size != null &&
+        variant.size!.isNotEmpty) {
       details.add('Talla: ${variant.size}');
     }
 
-    if (variant.color != null && variant.color!.isNotEmpty) {
+    if (variant.color != null &&
+        variant.color!.isNotEmpty) {
       details.add('Color: ${variant.color}');
     }
 
@@ -327,192 +335,72 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 
   Future<void> _editProduct(Product product) async {
-    final nameController = TextEditingController(
-      text: product.name,
-    );
-
-    final costController = TextEditingController(
-      text: product.cost.toStringAsFixed(2),
-    );
-
-    final priceController = TextEditingController(
-      text: product.salePrice.toStringAsFixed(2),
-    );
-
-    final minimumController = TextEditingController(
-      text: product.minimumStock.toString(),
-    );
-
-    final save = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Editar producto'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre',
-                  ),
-                ),
-                TextField(
-                  controller: costController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Costo',
-                  ),
-                ),
-                TextField(
-                  controller: priceController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Precio de venta',
-                  ),
-                ),
-                TextField(
-                  controller: minimumController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Stock mínimo',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
-              child: const Text('CANCELAR'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              child: const Text('GUARDAR'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (save != true) return;
-
     try {
-      final name = nameController.text.trim();
-      final cost = double.parse(costController.text.trim());
-      final price = double.parse(priceController.text.trim());
-      final minimum = int.parse(minimumController.text.trim());
-
-      await client
+      final productData = await client
           .from('products')
-          .update({
-            'name': name,
-            'current_cost': cost,
-            'sale_price': price,
-            'minimum_stock': minimum,
-          })
-          .eq('sku_base', product.skuBase);
+          .select('id')
+          .eq('sku_base', product.skuBase)
+          .single();
 
-      if (!mounted) return;
+      final productId = productData['id'].toString();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Producto actualizado'),
-        ),
-      );
-
-      await _loadProducts();
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No fue posible actualizar: $e'),
-        ),
-      );
-    }
-  }
-
-  Future<void> _editVariantStock(ProductVariant variant) async {
-    final stockController = TextEditingController(
-      text: variant.stock.toString(),
-    );
-
-    final save = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Ajustar stock'),
-          content: TextField(
-            controller: stockController,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Existencia actual',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
-              child: const Text('CANCELAR'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              child: const Text('GUARDAR'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (save != true) return;
-
-    try {
-      final stock = int.parse(stockController.text.trim());
-
-      if (stock < 0) {
-        throw Exception('El stock no puede ser negativo');
-      }
-
-      await client
+      final variantData = await client
           .from('product_variants')
-          .update({
-            'current_stock': stock,
-          })
-          .eq('sku', variant.sku);
+          .select(
+            'id, sku, size, color, current_stock, active',
+          )
+          .eq('product_id', productId)
+          .eq('active', true)
+          .order('sku');
+
+      final categoryData = await client
+          .from('categories')
+          .select('name')
+          .eq('active', true)
+          .order('name');
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Stock actualizado'),
+      final variants = (variantData as List)
+          .map(
+            (row) => _EditableVariant(
+              id: row['id']?.toString(),
+              sku: row['sku']?.toString(),
+              size: row['size']?.toString(),
+              color: row['color']?.toString(),
+              stock:
+                  (row['current_stock'] as num?)?.toInt() ??
+                      0,
+            ),
+          )
+          .toList();
+
+      final categories = (categoryData as List)
+          .map(
+            (row) => row['name'].toString(),
+          )
+          .toList();
+
+      final saved = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => _EditProductPage(
+            productId: productId,
+            product: product,
+            variants: variants,
+            categories: categories,
+          ),
         ),
       );
 
-      await _loadProducts();
+      if (saved == true) {
+        await _loadProducts();
+      }
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'No fue posible actualizar el stock: $e',
-          ),
-        ),
+      _message(
+        'No fue posible abrir la edición: $e',
       );
     }
   }
@@ -524,7 +412,8 @@ class _InventoryPageState extends State<InventoryPage> {
         return AlertDialog(
           title: const Text('Eliminar producto'),
           content: Text(
-            '¿Deseas eliminar ${product.name} del inventario?',
+            '¿Deseas eliminar ${product.name} '
+            'del inventario?',
           ),
           actions: [
             TextButton(
@@ -556,21 +445,611 @@ class _InventoryPageState extends State<InventoryPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Producto eliminado'),
-        ),
-      );
+      _message('Producto eliminado');
 
       await _loadProducts();
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No fue posible eliminar: $e'),
-        ),
+      _message(
+        'No fue posible eliminar: $e',
       );
     }
+  }
+
+  void _message(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+      ),
+    );
+  }
+}
+
+class _EditableVariant {
+  _EditableVariant({
+    this.id,
+    this.sku,
+    this.size,
+    this.color,
+    required int stock,
+  }) : stockController = TextEditingController(
+          text: stock.toString(),
+        );
+
+  final String? id;
+  final String? sku;
+
+  String? size;
+  String? color;
+
+  final TextEditingController stockController;
+
+  void dispose() {
+    stockController.dispose();
+  }
+}
+
+class _EditProductPage extends StatefulWidget {
+  const _EditProductPage({
+    required this.productId,
+    required this.product,
+    required this.variants,
+    required this.categories,
+  });
+
+  final String productId;
+  final Product product;
+  final List<_EditableVariant> variants;
+  final List<String> categories;
+
+  @override
+  State<_EditProductPage> createState() =>
+      _EditProductPageState();
+}
+
+class _EditProductPageState
+    extends State<_EditProductPage> {
+  late final TextEditingController nameController;
+  late final TextEditingController costController;
+  late final TextEditingController priceController;
+  late final TextEditingController minimumController;
+
+  late String selectedCategory;
+
+  late List<_EditableVariant> variants;
+
+  bool saving = false;
+
+  SupabaseClient get client => Supabase.instance.client;
+
+  @override
+  void initState() {
+    super.initState();
+
+    nameController = TextEditingController(
+      text: widget.product.name,
+    );
+
+    costController = TextEditingController(
+      text: widget.product.cost.toStringAsFixed(2),
+    );
+
+    priceController = TextEditingController(
+      text: widget.product.salePrice.toStringAsFixed(2),
+    );
+
+    minimumController = TextEditingController(
+      text: widget.product.minimumStock.toString(),
+    );
+
+    selectedCategory = widget.product.category;
+
+    variants = List<_EditableVariant>.from(
+      widget.variants,
+    );
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    costController.dispose();
+    priceController.dispose();
+    minimumController.dispose();
+
+    for (final variant in variants) {
+      variant.dispose();
+    }
+
+    super.dispose();
+  }
+
+  Future<String?> _askValue({
+    required String title,
+    required String label,
+    required String hint,
+  }) async {
+    final controller = TextEditingController();
+
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: hint,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('CANCELAR'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  controller.text.trim(),
+                );
+              },
+              child: const Text('AGREGAR'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+
+    return value;
+  }
+
+  Future<void> _addVariant() async {
+    final size = await _askValue(
+      title: 'Nueva variante',
+      label: 'Talla',
+      hint: 'Ej. 32, M/L, Unitalla',
+    );
+
+    if (!mounted || size == null) return;
+
+    final color = await _askValue(
+      title: 'Nueva variante',
+      label: 'Color',
+      hint: 'Ej. NEGRO, AZUL',
+    );
+
+    if (!mounted || color == null) return;
+
+    final cleanSize = size.trim();
+    final cleanColor = color.trim();
+
+    if (cleanSize.isEmpty && cleanColor.isEmpty) {
+      _message(
+        'Indica al menos una talla o un color',
+      );
+      return;
+    }
+
+    final exists = variants.any((variant) {
+      return (variant.size ?? '').trim().toLowerCase() ==
+              cleanSize.toLowerCase() &&
+          (variant.color ?? '').trim().toLowerCase() ==
+              cleanColor.toLowerCase();
+    });
+
+    if (exists) {
+      _message(
+        'Esta combinación ya existe',
+      );
+      return;
+    }
+
+    setState(() {
+      variants.add(
+        _EditableVariant(
+          size: cleanSize.isEmpty ? null : cleanSize,
+          color: cleanColor.isEmpty ? null : cleanColor,
+          stock: 0,
+        ),
+      );
+    });
+  }
+
+  Future<void> _removeVariant(
+    _EditableVariant variant,
+  ) async {
+    if (variants.length <= 1) {
+      _message(
+        'El producto debe conservar al menos una variante',
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Retirar variante'),
+          content: Text(
+            '¿Deseas retirar '
+            '${_description(variant)} del producto?\n\n'
+            'No se borrará el historial.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('CANCELAR'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('RETIRAR'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      variants.remove(variant);
+    });
+
+    variant.dispose();
+  }
+
+  String _description(_EditableVariant variant) {
+    final values = <String>[];
+
+    if (variant.size != null &&
+        variant.size!.trim().isNotEmpty) {
+      values.add(variant.size!.trim());
+    }
+
+    if (variant.color != null &&
+        variant.color!.trim().isNotEmpty) {
+      values.add(variant.color!.trim());
+    }
+
+    if (values.isEmpty) {
+      return 'Sin talla ni color';
+    }
+
+    return values.join(' · ');
+  }
+
+  Future<void> _save() async {
+    if (saving) return;
+
+    final name = nameController.text.trim();
+
+    final cost = double.tryParse(
+      costController.text.trim().replaceAll(',', '.'),
+    );
+
+    final price = double.tryParse(
+      priceController.text.trim().replaceAll(',', '.'),
+    );
+
+    final minimum = int.tryParse(
+      minimumController.text.trim(),
+    );
+
+    if (name.isEmpty ||
+        selectedCategory.trim().isEmpty ||
+        cost == null ||
+        price == null ||
+        minimum == null) {
+      _message(
+        'Completa correctamente todos los datos',
+      );
+      return;
+    }
+
+    if (cost < 0 || price < 0 || minimum < 0) {
+      _message(
+        'Los valores no pueden ser negativos',
+      );
+      return;
+    }
+
+    if (variants.isEmpty) {
+      _message(
+        'El producto debe tener al menos una variante',
+      );
+      return;
+    }
+
+    final variantJson = <Map<String, dynamic>>[];
+
+    for (final variant in variants) {
+      final stock = int.tryParse(
+        variant.stockController.text.trim(),
+      );
+
+      if (stock == null || stock < 0) {
+        _message(
+          'Revisa las existencias de '
+          '${_description(variant)}',
+        );
+        return;
+      }
+
+      variantJson.add({
+        'id': variant.id,
+        'size': variant.size,
+        'color': variant.color,
+        'stock': stock,
+        'active': true,
+      });
+    }
+
+    setState(() {
+      saving = true;
+    });
+
+    try {
+      await client.rpc(
+        'update_product_with_variants',
+        params: {
+          'p_product_id': widget.productId,
+          'p_category_name': selectedCategory,
+          'p_name': name,
+          'p_cost': cost,
+          'p_sale_price': price,
+          'p_minimum_stock': minimum,
+          'p_variants': variantJson,
+        },
+      );
+
+      if (!mounted) return;
+
+      _message(
+        'Producto actualizado correctamente',
+      );
+
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+
+      _message(
+        'No fue posible actualizar: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          saving = false;
+        });
+      }
+    }
+  }
+
+  void _message(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categoryValues = <String>{
+      selectedCategory,
+      ...widget.categories,
+    }.toList();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Editar producto'),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del producto',
+                border: OutlineInputBorder(),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            DropdownButtonFormField<String>(
+              initialValue: selectedCategory,
+              decoration: const InputDecoration(
+                labelText: 'Categoría',
+                border: OutlineInputBorder(),
+              ),
+              items: categoryValues.map((category) {
+                return DropdownMenuItem<String>(
+                  value: category,
+                  child: Text(category),
+                );
+              }).toList(),
+              onChanged: (value) {
+                if (value == null) return;
+
+                setState(() {
+                  selectedCategory = value;
+                });
+              },
+            ),
+
+            const SizedBox(height: 16),
+
+            TextField(
+              controller: costController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Costo',
+                prefixText: '\$ ',
+                border: OutlineInputBorder(),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            TextField(
+              controller: priceController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Precio de venta',
+                prefixText: '\$ ',
+                border: OutlineInputBorder(),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            TextField(
+              controller: minimumController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Stock mínimo',
+                border: OutlineInputBorder(),
+              ),
+            ),
+
+            const SizedBox(height: 28),
+
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Variantes y existencias',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _addVariant,
+                  tooltip: 'Agregar variante',
+                  icon: const Icon(
+                    Icons.add_circle_outline,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            const Text(
+              'Puedes cambiar la existencia, '
+              'agregar combinaciones o retirar variantes.',
+            ),
+
+            const SizedBox(height: 16),
+
+            ...variants.map((variant) {
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _description(variant),
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight:
+                                        FontWeight.w600,
+                                  ),
+                                ),
+                                if (variant.sku != null) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    variant.sku!,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              _removeVariant(variant);
+                            },
+                            icon: const Icon(
+                              Icons.delete_outline,
+                            ),
+                            tooltip: 'Retirar variante',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller:
+                            variant.stockController,
+                        keyboardType:
+                            TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Existencia actual',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+
+            const SizedBox(height: 20),
+
+            SizedBox(
+              height: 58,
+              child: FilledButton.icon(
+                onPressed: saving ? null : _save,
+                icon: saving
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child:
+                            CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.save),
+                label: Text(
+                  saving
+                      ? 'GUARDANDO...'
+                      : 'GUARDAR CAMBIOS',
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
   }
 }
