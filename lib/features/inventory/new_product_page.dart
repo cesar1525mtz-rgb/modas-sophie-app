@@ -10,33 +10,27 @@ class NewProductPage extends StatefulWidget {
 
 class _NewProductPageState extends State<NewProductPage> {
   final nameController = TextEditingController();
+  final categoryController = TextEditingController();
   final costController = TextEditingController();
   final priceController = TextEditingController();
   final minimumController = TextEditingController(text: '1');
 
-  final List<String> categories = [];
   final List<String> sizes = ['Unitalla'];
   final List<String> colors = [];
 
   final Set<String> selectedSizes = {'Unitalla'};
   final Set<String> selectedColors = {};
+
   final Map<String, TextEditingController> stockControllers = {};
 
-  String? selectedCategory;
-  bool loadingCategories = true;
   bool saving = false;
 
   SupabaseClient get client => Supabase.instance.client;
 
   @override
-  void initState() {
-    super.initState();
-    _loadCategories();
-  }
-
-  @override
   void dispose() {
     nameController.dispose();
+    categoryController.dispose();
     costController.dispose();
     priceController.dispose();
     minimumController.dispose();
@@ -48,52 +42,6 @@ class _NewProductPageState extends State<NewProductPage> {
     super.dispose();
   }
 
-  Future<void> _loadCategories() async {
-    try {
-      final rows = await client
-          .from('categories')
-          .select('name')
-          .order('name');
-
-      final names = <String>[];
-
-      for (final row in rows) {
-        final name = row['name']?.toString().trim();
-
-        if (name != null &&
-            name.isNotEmpty &&
-            !names.any(
-              (item) => item.toLowerCase() == name.toLowerCase(),
-            )) {
-          names.add(name);
-        }
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        categories
-          ..clear()
-          ..addAll(names);
-
-        if (selectedCategory != null &&
-            !categories.contains(selectedCategory)) {
-          selectedCategory = null;
-        }
-
-        loadingCategories = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        loadingCategories = false;
-      });
-
-      _message('No fue posible cargar las categorías: $e');
-    }
-  }
-
   String _variantKey(String? size, String? color) {
     return '${size ?? ''}|${color ?? ''}';
   }
@@ -102,10 +50,8 @@ class _NewProductPageState extends State<NewProductPage> {
     String? size,
     String? color,
   ) {
-    final key = _variantKey(size, color);
-
     return stockControllers.putIfAbsent(
-      key,
+      _variantKey(size, color),
       () => TextEditingController(text: '0'),
     );
   }
@@ -113,11 +59,11 @@ class _NewProductPageState extends State<NewProductPage> {
   List<Map<String, String?>> get combinations {
     final activeSizes = selectedSizes.isEmpty
         ? <String?>[null]
-        : selectedSizes.map<String?>((value) => value).toList();
+        : selectedSizes.map<String?>((e) => e).toList();
 
     final activeColors = selectedColors.isEmpty
         ? <String?>[null]
-        : selectedColors.map<String?>((value) => value).toList();
+        : selectedColors.map<String?>((e) => e).toList();
 
     final result = <Map<String, String?>>[];
 
@@ -136,8 +82,7 @@ class _NewProductPageState extends State<NewProductPage> {
   Future<String?> _askValue({
     required String title,
     required String label,
-    String? hint,
-    TextCapitalization capitalization = TextCapitalization.words,
+    required String hint,
   }) async {
     final controller = TextEditingController();
 
@@ -149,7 +94,7 @@ class _NewProductPageState extends State<NewProductPage> {
           content: TextField(
             controller: controller,
             autofocus: true,
-            textCapitalization: capitalization,
+            textCapitalization: TextCapitalization.words,
             decoration: InputDecoration(
               labelText: label,
               hintText: hint,
@@ -161,10 +106,12 @@ class _NewProductPageState extends State<NewProductPage> {
               child: const Text('CANCELAR'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(
-                dialogContext,
-                controller.text.trim(),
-              ),
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  controller.text.trim(),
+                );
+              },
               child: const Text('AGREGAR'),
             ),
           ],
@@ -173,6 +120,7 @@ class _NewProductPageState extends State<NewProductPage> {
     );
 
     controller.dispose();
+
     return value;
   }
 
@@ -180,27 +128,13 @@ class _NewProductPageState extends State<NewProductPage> {
     final value = await _askValue(
       title: 'Agregar categoría',
       label: 'Nombre de la categoría',
-      hint: 'Ej. Calzado',
+      hint: 'Ej. Zapatos',
     );
 
     if (value == null || value.trim().isEmpty) return;
 
-    final clean = value.trim();
-
-    final existing = categories.where(
-      (item) => item.toLowerCase() == clean.toLowerCase(),
-    );
-
     setState(() {
-      if (existing.isNotEmpty) {
-        selectedCategory = existing.first;
-      } else {
-        categories.add(clean);
-        categories.sort(
-          (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
-        );
-        selectedCategory = clean;
-      }
+      categoryController.text = value.trim();
     });
   }
 
@@ -208,8 +142,7 @@ class _NewProductPageState extends State<NewProductPage> {
     final value = await _askValue(
       title: 'Agregar talla',
       label: 'Talla',
-      hint: 'Ej. 28, 32, CH, M, G',
-      capitalization: TextCapitalization.characters,
+      hint: 'Ej. 28, CH, M, G',
     );
 
     if (value == null || value.trim().isEmpty) return;
@@ -217,7 +150,7 @@ class _NewProductPageState extends State<NewProductPage> {
     final clean = value.trim();
 
     if (sizes.any(
-      (size) => size.toLowerCase() == clean.toLowerCase(),
+      (e) => e.toLowerCase() == clean.toLowerCase(),
     )) {
       return;
     }
@@ -240,7 +173,7 @@ class _NewProductPageState extends State<NewProductPage> {
     final clean = value.trim();
 
     if (colors.any(
-      (color) => color.toLowerCase() == clean.toLowerCase(),
+      (e) => e.toLowerCase() == clean.toLowerCase(),
     )) {
       return;
     }
@@ -255,7 +188,7 @@ class _NewProductPageState extends State<NewProductPage> {
     if (saving) return;
 
     final name = nameController.text.trim();
-    final category = selectedCategory;
+    final category = categoryController.text.trim();
 
     final cost = double.tryParse(
       costController.text.trim().replaceAll(',', '.'),
@@ -270,17 +203,11 @@ class _NewProductPageState extends State<NewProductPage> {
     );
 
     if (name.isEmpty ||
-        category == null ||
-        category.trim().isEmpty ||
+        category.isEmpty ||
         cost == null ||
         price == null ||
         minimum == null) {
       _message('Completa correctamente todos los datos');
-      return;
-    }
-
-    if (cost < 0 || price < 0 || minimum < 0) {
-      _message('Los valores no pueden ser negativos');
       return;
     }
 
@@ -299,13 +226,6 @@ class _NewProductPageState extends State<NewProductPage> {
         'stock': stock,
       };
     }).toList();
-
-    if (variants.any(
-      (variant) => (variant['stock'] as int) < 0,
-    )) {
-      _message('La existencia no puede ser negativa');
-      return;
-    }
 
     setState(() {
       saving = true;
@@ -335,6 +255,7 @@ class _NewProductPageState extends State<NewProductPage> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
+
       _message('No fue posible guardar: $e');
     } finally {
       if (mounted) {
@@ -347,7 +268,9 @@ class _NewProductPageState extends State<NewProductPage> {
 
   void _message(String text) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
+      SnackBar(
+        content: Text(text),
+      ),
     );
   }
 
@@ -363,64 +286,36 @@ class _NewProductPageState extends State<NewProductPage> {
           children: [
             TextField(
               controller: nameController,
-              textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(
                 labelText: 'Nombre del producto',
                 border: OutlineInputBorder(),
               ),
             ),
+
             const SizedBox(height: 16),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: selectedCategory,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Categoría',
-                      border: OutlineInputBorder(),
-                    ),
-                    hint: Text(
-                      loadingCategories
-                          ? 'Cargando...'
-                          : 'Selecciona categoría',
-                    ),
-                    items: categories.map((category) {
-                      return DropdownMenuItem<String>(
-                        value: category,
-                        child: Text(category),
-                      );
-                    }).toList(),
-                    onChanged: loadingCategories
-                        ? null
-                        : (value) {
-                            setState(() {
-                              selectedCategory = value;
-                            });
-                          },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  height: 56,
-                  child: FilledButton(
-                    onPressed: _addCategory,
-                    child: const Icon(Icons.add),
-                  ),
-                ),
-              ],
+
+            TextField(
+              controller: categoryController,
+              readOnly: true,
+              decoration: const InputDecoration(
+                labelText: 'Categoría',
+                hintText: 'Sin categoría seleccionada',
+                border: OutlineInputBorder(),
+              ),
             ),
-            const SizedBox(height: 8),
+
             TextButton.icon(
               onPressed: _addCategory,
               icon: const Icon(Icons.add),
               label: const Text('AGREGAR CATEGORÍA'),
             ),
-            const SizedBox(height: 8),
+
+            const SizedBox(height: 16),
+
             TextField(
               controller: costController,
-              keyboardType: const TextInputType.numberWithOptions(
+              keyboardType:
+                  const TextInputType.numberWithOptions(
                 decimal: true,
               ),
               decoration: const InputDecoration(
@@ -429,10 +324,13 @@ class _NewProductPageState extends State<NewProductPage> {
                 border: OutlineInputBorder(),
               ),
             ),
+
             const SizedBox(height: 16),
+
             TextField(
               controller: priceController,
-              keyboardType: const TextInputType.numberWithOptions(
+              keyboardType:
+                  const TextInputType.numberWithOptions(
                 decimal: true,
               ),
               decoration: const InputDecoration(
@@ -441,7 +339,9 @@ class _NewProductPageState extends State<NewProductPage> {
                 border: OutlineInputBorder(),
               ),
             ),
+
             const SizedBox(height: 16),
+
             TextField(
               controller: minimumController,
               keyboardType: TextInputType.number,
@@ -450,7 +350,9 @@ class _NewProductPageState extends State<NewProductPage> {
                 border: OutlineInputBorder(),
               ),
             ),
+
             const SizedBox(height: 28),
+
             const Text(
               'Tallas',
               style: TextStyle(
@@ -458,7 +360,9 @@ class _NewProductPageState extends State<NewProductPage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+
             const SizedBox(height: 10),
+
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -478,6 +382,7 @@ class _NewProductPageState extends State<NewProductPage> {
                     },
                   );
                 }),
+
                 ActionChip(
                   avatar: const Icon(Icons.add),
                   label: const Text('Agregar talla'),
@@ -485,7 +390,9 @@ class _NewProductPageState extends State<NewProductPage> {
                 ),
               ],
             ),
+
             const SizedBox(height: 28),
+
             const Text(
               'Colores',
               style: TextStyle(
@@ -493,7 +400,9 @@ class _NewProductPageState extends State<NewProductPage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+
             const SizedBox(height: 10),
+
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -513,6 +422,7 @@ class _NewProductPageState extends State<NewProductPage> {
                     },
                   );
                 }),
+
                 ActionChip(
                   avatar: const Icon(Icons.add),
                   label: const Text('Agregar color'),
@@ -520,7 +430,9 @@ class _NewProductPageState extends State<NewProductPage> {
                 ),
               ],
             ),
+
             const SizedBox(height: 28),
+
             const Text(
               'Existencias por variante',
               style: TextStyle(
@@ -528,11 +440,15 @@ class _NewProductPageState extends State<NewProductPage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+
             const SizedBox(height: 8),
+
             const Text(
               'Indica cuántas piezas tienes de cada combinación.',
             ),
+
             const SizedBox(height: 16),
+
             ...combinations.map((variant) {
               final size = variant['size'];
               final color = variant['color'];
@@ -559,6 +475,7 @@ class _NewProductPageState extends State<NewProductPage> {
                           ),
                         ),
                       ),
+
                       SizedBox(
                         width: 100,
                         child: TextField(
@@ -579,7 +496,9 @@ class _NewProductPageState extends State<NewProductPage> {
                 ),
               );
             }),
+
             const SizedBox(height: 24),
+
             SizedBox(
               height: 58,
               child: FilledButton.icon(
@@ -594,10 +513,13 @@ class _NewProductPageState extends State<NewProductPage> {
                       )
                     : const Icon(Icons.save),
                 label: Text(
-                  saving ? 'GUARDANDO...' : 'GUARDAR PRODUCTO',
+                  saving
+                      ? 'GUARDANDO...'
+                      : 'GUARDAR PRODUCTO',
                 ),
               ),
             ),
+
             const SizedBox(height: 30),
           ],
         ),
