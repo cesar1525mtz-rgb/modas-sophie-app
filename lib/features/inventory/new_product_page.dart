@@ -10,27 +10,33 @@ class NewProductPage extends StatefulWidget {
 
 class _NewProductPageState extends State<NewProductPage> {
   final nameController = TextEditingController();
-  final categoryController = TextEditingController();
   final costController = TextEditingController();
   final priceController = TextEditingController();
   final minimumController = TextEditingController(text: '1');
 
+  final List<String> categories = [];
   final List<String> sizes = ['Unitalla'];
   final List<String> colors = [];
 
   final Set<String> selectedSizes = {'Unitalla'};
   final Set<String> selectedColors = {};
-
   final Map<String, TextEditingController> stockControllers = {};
 
+  String? selectedCategory;
+  bool loadingCategories = true;
   bool saving = false;
 
   SupabaseClient get client => Supabase.instance.client;
 
   @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  @override
   void dispose() {
     nameController.dispose();
-    categoryController.dispose();
     costController.dispose();
     priceController.dispose();
     minimumController.dispose();
@@ -40,6 +46,52 @@ class _NewProductPageState extends State<NewProductPage> {
     }
 
     super.dispose();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final rows = await client
+          .from('categories')
+          .select('name')
+          .order('name');
+
+      final names = <String>[];
+
+      for (final row in rows) {
+        final name = row['name']?.toString().trim();
+
+        if (name != null &&
+            name.isNotEmpty &&
+            !names.any(
+              (item) => item.toLowerCase() == name.toLowerCase(),
+            )) {
+          names.add(name);
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        categories
+          ..clear()
+          ..addAll(names);
+
+        if (selectedCategory != null &&
+            !categories.contains(selectedCategory)) {
+          selectedCategory = null;
+        }
+
+        loadingCategories = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        loadingCategories = false;
+      });
+
+      _message('No fue posible cargar las categorías: $e');
+    }
   }
 
   String _variantKey(String? size, String? color) {
@@ -81,37 +133,38 @@ class _NewProductPageState extends State<NewProductPage> {
     return result;
   }
 
-  Future<void> _addSize() async {
+  Future<String?> _askValue({
+    required String title,
+    required String label,
+    String? hint,
+    TextCapitalization capitalization = TextCapitalization.words,
+  }) async {
     final controller = TextEditingController();
 
     final value = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Agregar talla'),
+          title: Text(title),
           content: TextField(
             controller: controller,
             autofocus: true,
-            textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(
-              labelText: 'Talla',
-              hintText: 'Ej. 28, 32, CH, M, G',
+            textCapitalization: capitalization,
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: hint,
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('CANCELAR'),
             ),
             FilledButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                  controller.text.trim(),
-                );
-              },
+              onPressed: () => Navigator.pop(
+                dialogContext,
+                controller.text.trim(),
+              ),
               child: const Text('AGREGAR'),
             ),
           ],
@@ -120,6 +173,44 @@ class _NewProductPageState extends State<NewProductPage> {
     );
 
     controller.dispose();
+    return value;
+  }
+
+  Future<void> _addCategory() async {
+    final value = await _askValue(
+      title: 'Agregar categoría',
+      label: 'Nombre de la categoría',
+      hint: 'Ej. Calzado',
+    );
+
+    if (value == null || value.trim().isEmpty) return;
+
+    final clean = value.trim();
+
+    final existing = categories.where(
+      (item) => item.toLowerCase() == clean.toLowerCase(),
+    );
+
+    setState(() {
+      if (existing.isNotEmpty) {
+        selectedCategory = existing.first;
+      } else {
+        categories.add(clean);
+        categories.sort(
+          (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+        );
+        selectedCategory = clean;
+      }
+    });
+  }
+
+  Future<void> _addSize() async {
+    final value = await _askValue(
+      title: 'Agregar talla',
+      label: 'Talla',
+      hint: 'Ej. 28, 32, CH, M, G',
+      capitalization: TextCapitalization.characters,
+    );
 
     if (value == null || value.trim().isEmpty) return;
 
@@ -138,44 +229,11 @@ class _NewProductPageState extends State<NewProductPage> {
   }
 
   Future<void> _addColor() async {
-    final controller = TextEditingController();
-
-    final value = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Agregar color'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Color',
-              hintText: 'Ej. Negro, Azul, Café',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('CANCELAR'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                  controller.text.trim(),
-                );
-              },
-              child: const Text('AGREGAR'),
-            ),
-          ],
-        );
-      },
+    final value = await _askValue(
+      title: 'Agregar color',
+      label: 'Color',
+      hint: 'Ej. Negro, Azul, Café',
     );
-
-    controller.dispose();
 
     if (value == null || value.trim().isEmpty) return;
 
@@ -197,7 +255,7 @@ class _NewProductPageState extends State<NewProductPage> {
     if (saving) return;
 
     final name = nameController.text.trim();
-    final category = categoryController.text.trim();
+    final category = selectedCategory;
 
     final cost = double.tryParse(
       costController.text.trim().replaceAll(',', '.'),
@@ -212,7 +270,8 @@ class _NewProductPageState extends State<NewProductPage> {
     );
 
     if (name.isEmpty ||
-        category.isEmpty ||
+        category == null ||
+        category.trim().isEmpty ||
         cost == null ||
         price == null ||
         minimum == null) {
@@ -276,7 +335,6 @@ class _NewProductPageState extends State<NewProductPage> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-
       _message('No fue posible guardar: $e');
     } finally {
       if (mounted) {
@@ -289,9 +347,7 @@ class _NewProductPageState extends State<NewProductPage> {
 
   void _message(String text) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text),
-      ),
+      SnackBar(content: Text(text)),
     );
   }
 
@@ -314,16 +370,54 @@ class _NewProductPageState extends State<NewProductPage> {
               ),
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: categoryController,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Categoría',
-                hintText: 'Ej. Pantalón dama',
-                border: OutlineInputBorder(),
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: selectedCategory,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Categoría',
+                      border: OutlineInputBorder(),
+                    ),
+                    hint: Text(
+                      loadingCategories
+                          ? 'Cargando...'
+                          : 'Selecciona categoría',
+                    ),
+                    items: categories.map((category) {
+                      return DropdownMenuItem<String>(
+                        value: category,
+                        child: Text(category),
+                      );
+                    }).toList(),
+                    onChanged: loadingCategories
+                        ? null
+                        : (value) {
+                            setState(() {
+                              selectedCategory = value;
+                            });
+                          },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 56,
+                  child: FilledButton(
+                    onPressed: _addCategory,
+                    child: const Icon(Icons.add),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _addCategory,
+              icon: const Icon(Icons.add),
+              label: const Text('AGREGAR CATEGORÍA'),
+            ),
+            const SizedBox(height: 8),
             TextField(
               controller: costController,
               keyboardType: const TextInputType.numberWithOptions(
