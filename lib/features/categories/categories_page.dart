@@ -607,7 +607,7 @@ class _CategoryProductsPageState
       final productRow = await supabase
           .from('products')
           .select(
-            'id, name, sku_base, cost, sale_price, minimum_stock',
+            'id, name, sku_base, current_cost, sale_price, minimum_stock',
           )
           .eq('id', productId)
           .single();
@@ -751,7 +751,7 @@ class _CategoryProductsPageState
                   ),
                   detailRow(
                     'Costo',
-                    '\$${((productRow['cost'] as num?) ?? 0).toDouble().toStringAsFixed(2)}',
+                    '\$${((productRow['current_cost'] as num?) ?? 0).toDouble().toStringAsFixed(2)}',
                   ),
                   detailRow(
                     'Precio',
