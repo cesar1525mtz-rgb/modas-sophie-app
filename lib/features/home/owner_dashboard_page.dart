@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/app_user.dart';
 import '../finance/finance_page.dart';
@@ -82,6 +83,54 @@ class _MorePage extends StatelessWidget {
     required this.owner,
   });
 
+  Future<void> _cerrarSesion(BuildContext context) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Cerrar sesión'),
+          content: const Text(
+            '¿Seguro que deseas cerrar sesión?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('CANCELAR'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('CERRAR SESIÓN'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmar != true) {
+      return;
+    }
+
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo cerrar sesión: $error',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -140,6 +189,26 @@ class _MorePage extends StatelessWidget {
                 },
               ),
             ),
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(
+                Icons.logout,
+              ),
+              title: const Text(
+                'Cerrar sesión',
+              ),
+              subtitle: const Text(
+                'Salir de Modas Sophie',
+              ),
+              trailing: const Icon(
+                Icons.chevron_right,
+              ),
+              onTap: () {
+                _cerrarSesion(context);
+              },
+            ),
+          ),
         ],
       ),
     );
