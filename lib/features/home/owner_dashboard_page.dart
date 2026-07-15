@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/app_user.dart';
+import '../categories/categories_page.dart';
 import '../finance/finance_page.dart';
 import '../inventory/inventory_page.dart';
 import '../sales/pos_page.dart';
@@ -165,6 +166,30 @@ class _MorePage extends StatelessWidget {
               },
             ),
           ),
+          if (owner)
+            Card(
+              child: ListTile(
+                leading: const Icon(
+                  Icons.category_outlined,
+                ),
+                title: const Text('Categorías'),
+                subtitle: const Text(
+                  'Ver categorías y sus productos',
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                ),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const CategoriesPage(),
+                    ),
+                  );
+                },
+              ),
+            ),
           if (owner)
             Card(
               child: ListTile(
