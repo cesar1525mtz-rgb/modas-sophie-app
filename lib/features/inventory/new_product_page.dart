@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class NewProductPage extends StatefulWidget {
-  const NewProductPage({super.key});
+  final String? initialCategoryName;
+
+  const NewProductPage({
+    super.key,
+    this.initialCategoryName,
+  });
 
   @override
   State<NewProductPage> createState() => _NewProductPageState();
@@ -37,10 +42,15 @@ class _NewProductPageState extends State<NewProductPage> {
   SupabaseClient get client => Supabase.instance.client;
 
   @override
-  void initState() {
-    super.initState();
-    _loadCatalogs();
+void initState() {
+  super.initState();
+
+  if (widget.initialCategoryName != null) {
+    categoryController.text = widget.initialCategoryName!;
   }
+
+  _loadCatalogs();
+}
 
   @override
   void dispose() {
