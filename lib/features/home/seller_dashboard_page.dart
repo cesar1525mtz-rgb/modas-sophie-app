@@ -1,43 +1,299 @@
-Run flutter build apk --release
-Running Gradle task 'assembleRelease'...                        
-Checking the license for package CMake 3.22.1 in /usr/local/lib/android/sdk/licenses
-License for package CMake 3.22.1 accepted.
-Preparing "Install CMake 3.22.1 v.3.22.1".
-"Install CMake 3.22.1 v.3.22.1" ready.
-Installing CMake 3.22.1 in /usr/local/lib/android/sdk/cmake/3.22.1
-"Install CMake 3.22.1 v.3.22.1" complete.
-"Install CMake 3.22.1 v.3.22.1" finished.
-lib/features/home/seller_dashboard_page.dart:5:8: Error: Error when reading 'lib/data/models/user_profile.dart': No such file or directory
-import '../../data/models/user_profile.dart';
-       ^
-lib/features/home/seller_dashboard_page.dart:6:8: Error: Error when reading 'lib/features/sales/sales_page.dart': No such file or directory
-import '../sales/sales_page.dart';
-       ^
-lib/features/home/seller_dashboard_page.dart:14:9: Error: Type 'UserProfile' not found.
-  final UserProfile profile;
-        ^^^^^^^^^^^
-lib/features/home/seller_dashboard_page.dart:14:9: Error: 'UserProfile' isn't a type.
-  final UserProfile profile;
-        ^^^^^^^^^^^
-lib/features/home/seller_dashboard_page.dart:90:31: Error: Not a constant expression.
-        builder: (_) => const SalesPage(),
-                              ^^^^^^^^^
-Target kernel_snapshot_program failed: Exception
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../data/auth_repository.dart';
+import '../../models/app_user.dart';
+import '../sales/pos_page.dart';
 
-FAILURE: Build failed with an exception.
+class SellerDashboardPage extends StatefulWidget {
+  const SellerDashboardPage({
+    super.key,
+    required this.profile,
+  });
 
-* What went wrong:
-Execution failed for task ':app:compileFlutterBuildRelease'.
-> Process 'command '/opt/hostedtoolcache/flutter/stable-3.44.6-x64/flutter/bin/flutter'' finished with non-zero exit value 1
+  final AppUser profile;
 
-* Try:
-> Run with --stacktrace option to get the stack trace.
-> Run with --info or --debug option to get more log output.
-> Run with --scan to generate a Build Scan (Powered by Develocity).
-> Get more help at https://help.gradle.org.
+  @override
+  State<SellerDashboardPage> createState() =>
+      _SellerDashboardPageState();
+}
 
-BUILD FAILED in 1m 59s
-Running Gradle task 'assembleRelease'...                          119.8s
-Gradle task assembleRelease failed with exit code 1
-Error: Process completed with exit code 1.
+class _SellerDashboardPageState
+    extends State<SellerDashboardPage> {
+  final SupabaseClient _client = Supabase.instance.client;
+
+  bool _loading = true;
+  bool _cashOpen = false;
+  double _salesToday = 0;
+  int _salesCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    if (mounted) {
+      setState(() => _loading = true);
+    }
+
+    try {
+      final now = DateTime.now();
+
+      final startOfDay = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).toUtc();
+
+      final sales = await _client
+          .from('sales')
+          .select('id,total')
+          .eq('created_by', widget.profile.id)
+          .eq('status', 'COMPLETADA')
+          .gte(
+            'created_at',
+            startOfDay.toIso8601String(),
+          );
+
+      double total = 0;
+
+      for (final sale in sales) {
+        total +=
+            (sale['total'] as num?)?.toDouble() ?? 0;
+      }
+
+      final cashSession = await _client.rpc(
+        'get_open_cash_session',
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _salesToday = total;
+        _salesCount = sales.length;
+        _cashOpen = cashSession != null;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() => _loading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo actualizar el panel: $error',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openSales() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const PosPage(),
+      ),
+    );
+
+    await _loadData();
+  }
+
+  Future<void> _signOut() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text(
+          '¿Seguro que deseas cerrar sesión?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(false),
+            child: const Text('CANCELAR'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(true),
+            child: const Text('CERRAR SESIÓN'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    await AuthRepository(_client).signOut();
+  }
+
+  Widget _infoCard({
+    required String title,
+    required String value,
+    required IconData icon,
+  }) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 34,
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    value,
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineMedium
+                        ?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Modas Sophie'),
+        automaticallyImplyLeading: false,
+        actions: [
+          IconButton(
+            tooltip: 'Actualizar',
+            onPressed: _loading ? null : _loadData,
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            tooltip: 'Cerrar sesión',
+            onPressed: _signOut,
+            icon: const Icon(Icons.logout),
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _loadData,
+        child: ListView(
+          physics:
+              const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(24),
+          children: [
+            Text(
+              'Hola, ${widget.profile.name}',
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Panel de vendedor',
+              style:
+                  Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 28),
+            if (_loading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(40),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else ...[
+              _infoCard(
+                title: 'Mis ventas hoy',
+                value:
+                    '\$${_salesToday.toStringAsFixed(2)}',
+                icon: Icons.point_of_sale,
+              ),
+              const SizedBox(height: 16),
+              _infoCard(
+                title: 'Ventas realizadas',
+                value: '$_salesCount',
+                icon: Icons.receipt_long,
+              ),
+              const SizedBox(height: 16),
+              Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _cashOpen
+                            ? Icons.lock_open_outlined
+                            : Icons.lock_outline,
+                        size: 34,
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _cashOpen
+                                  ? 'Caja abierta'
+                                  : 'Caja cerrada',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
+                                    fontWeight:
+                                        FontWeight.bold,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _cashOpen
+                                  ? 'Puedes realizar ventas'
+                                  : 'El dueño debe abrir la caja',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
+              SizedBox(
+                height: 58,
+                child: FilledButton.icon(
+                  onPressed:
+                      _cashOpen ? _openSales : null,
+                  icon: const Icon(
+                    Icons.shopping_cart_checkout,
+                  ),
+                  label: const Text('IR A VENTAS'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
