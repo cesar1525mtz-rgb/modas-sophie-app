@@ -5,7 +5,7 @@ class SalesRepository {
 
   SalesRepository(this.client);
 
-  Future<List<Map<String, dynamic>>> getSalesHistory() async {
+  Future<List<Map<String, dynamic>>> listSales() async {
     final rows = await client
         .from('sales')
         .select(
@@ -18,9 +18,14 @@ class SalesRepository {
           'quantity,unit_price,total'
           ')',
         )
-        .order('created_at', ascending: false);
+        .order(
+          'created_at',
+          ascending: false,
+        );
 
-    final sales = List<Map<String, dynamic>>.from(rows);
+    final sales = List<Map<String, dynamic>>.from(
+      rows as List,
+    );
 
     final sellerIds = sales
         .map((sale) => sale['seller_id'])
@@ -41,7 +46,9 @@ class SalesRepository {
         final id = profile['id']?.toString();
         final name = profile['name']?.toString();
 
-        if (id != null && name != null && name.trim().isNotEmpty) {
+        if (id != null &&
+            name != null &&
+            name.trim().isNotEmpty) {
           sellerNames[id] = name;
         }
       }
@@ -50,9 +57,17 @@ class SalesRepository {
     for (final sale in sales) {
       final sellerId = sale['seller_id']?.toString();
 
-      sale['seller_name'] = sellerId == null
+      final sellerName = sellerId == null
           ? null
           : sellerNames[sellerId];
+
+      sale['seller_name'] = sellerName;
+
+      sale['user_profiles'] = sellerName == null
+          ? null
+          : <String, dynamic>{
+              'name': sellerName,
+            };
     }
 
     return sales;
