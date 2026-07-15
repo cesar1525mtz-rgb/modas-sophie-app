@@ -11,8 +11,7 @@ class SalesHistoryPage extends StatefulWidget {
       _SalesHistoryPageState();
 }
 
-class _SalesHistoryPageState
-    extends State<SalesHistoryPage> {
+class _SalesHistoryPageState extends State<SalesHistoryPage> {
   late final SalesRepository repo;
   late Future<List<Map<String, dynamic>>> future;
 
@@ -55,16 +54,27 @@ class _SalesHistoryPageState
     final local = date.toLocal();
 
     final day = local.day.toString().padLeft(2, '0');
-    final month =
-        local.month.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
     final year = local.year.toString();
 
-    final hour =
-        local.hour.toString().padLeft(2, '0');
-    final minute =
-        local.minute.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
 
     return '$day/$month/$year · $hour:$minute';
+  }
+
+  String sellerName(Map<String, dynamic> sale) {
+    final profile = sale['user_profiles'];
+
+    if (profile is Map) {
+      final name = profile['name']?.toString().trim();
+
+      if (name != null && name.isNotEmpty) {
+        return name;
+      }
+    }
+
+    return 'Sin vendedor';
   }
 
   @override
@@ -174,8 +184,7 @@ class _SalesHistoryPageState
                 final sale = sales[index];
 
                 final payments =
-                    (sale['sale_payments'] as List?) ??
-                        [];
+                    (sale['sale_payments'] as List?) ?? [];
 
                 final items =
                     (sale['sale_items'] as List?) ?? [];
@@ -185,6 +194,8 @@ class _SalesHistoryPageState
                     : payments.first['method']
                             ?.toString() ??
                         'SIN PAGO';
+
+                final seller = sellerName(sale);
 
                 return Card(
                   margin: const EdgeInsets.only(
@@ -202,23 +213,22 @@ class _SalesHistoryPageState
                       ),
                     ),
                     title: Text(
-                      sale['folio']?.toString() ??
-                          'Venta',
+                      sale['folio']?.toString() ?? 'Venta',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     subtitle: Padding(
-                      padding:
-                          const EdgeInsets.only(top: 6),
+                      padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         '${saleDate(sale['created_at'])}\n'
+                        'Vendedor: $seller\n'
                         '$paymentMethod · '
                         '${items.length} variante'
                         '${items.length == 1 ? '' : 's'}',
                       ),
                     ),
-                    isThreeLine: true,
+                    isThreeLine: false,
                     trailing: Column(
                       mainAxisAlignment:
                           MainAxisAlignment.center,
@@ -234,8 +244,7 @@ class _SalesHistoryPageState
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          sale['status']?.toString() ??
-                              '',
+                          sale['status']?.toString() ?? '',
                         ),
                       ],
                     ),
@@ -243,8 +252,7 @@ class _SalesHistoryPageState
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              SaleDetailPage(
+                          builder: (_) => SaleDetailPage(
                             sale: sale,
                           ),
                         ),
@@ -281,6 +289,45 @@ class SaleDetailPage extends StatelessWidget {
     return text.isEmpty ? '—' : text;
   }
 
+  String saleDate(dynamic value) {
+    if (value == null) {
+      return '—';
+    }
+
+    final date = DateTime.tryParse(
+      value.toString(),
+    );
+
+    if (date == null) {
+      return value.toString();
+    }
+
+    final local = date.toLocal();
+
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final year = local.year.toString();
+
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+
+    return '$day/$month/$year · $hour:$minute';
+  }
+
+  String sellerName() {
+    final profile = sale['user_profiles'];
+
+    if (profile is Map) {
+      final name = profile['name']?.toString().trim();
+
+      if (name != null && name.isNotEmpty) {
+        return name;
+      }
+    }
+
+    return 'Sin vendedor';
+  }
+
   @override
   Widget build(BuildContext context) {
     final items =
@@ -315,6 +362,16 @@ class SaleDetailPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   _DetailRow(
+                    label: 'Fecha y hora',
+                    value: saleDate(
+                      sale['created_at'],
+                    ),
+                  ),
+                  _DetailRow(
+                    label: 'Vendedor',
+                    value: sellerName(),
+                  ),
+                  _DetailRow(
                     label: 'Estado',
                     value: valueOrDash(
                       sale['status'],
@@ -324,6 +381,18 @@ class SaleDetailPage extends StatelessWidget {
                     label: 'Total',
                     value: money(
                       sale['total'],
+                    ),
+                  ),
+                  _DetailRow(
+                    label: 'Costo vendido',
+                    value: money(
+                      sale['sold_cost'],
+                    ),
+                  ),
+                  _DetailRow(
+                    label: 'Utilidad bruta',
+                    value: money(
+                      sale['gross_profit'],
                     ),
                   ),
                 ],
@@ -360,14 +429,10 @@ class SaleDetailPage extends StatelessWidget {
                     valueOrDash(
                       item['historical_sku'],
                     ),
-                    if (item['historical_color'] !=
-                        null)
-                      item['historical_color']
-                          .toString(),
-                    if (item['historical_size'] !=
-                        null)
-                      item['historical_size']
-                          .toString(),
+                    if (item['historical_color'] != null)
+                      item['historical_color'].toString(),
+                    if (item['historical_size'] != null)
+                      item['historical_size'].toString(),
                   ].join(' · '),
                 ),
                 trailing: Column(
@@ -453,14 +518,19 @@ class _DetailRow extends StatelessWidget {
         bottom: 10,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Text(label),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
+          const SizedBox(width: 16),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
