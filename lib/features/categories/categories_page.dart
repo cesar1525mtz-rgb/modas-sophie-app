@@ -163,29 +163,36 @@ class _CategoriesPageState extends State<CategoriesPage> {
                 }
 
                 await supabase
-                    .from('categories')
-                    .insert({
-                  'business_id': businessId,
-                  'name': name,
-                  'sku_prefix': sku,
-                });
+    .from('categories')
+    .insert({
+  'business_id': businessId,
+  'name': name,
+  'sku_prefix': sku,
+});
 
-                if (!mounted) {
-                  return;
-                }
+if (!mounted || !dialogContext.mounted) {
+  return;
+}
 
-                Navigator.of(dialogContext).pop();
+Navigator.of(dialogContext).pop();
 
-                ScaffoldMessenger.of(this.context)
-                    .showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Categoría creada correctamente',
-                    ),
-                  ),
-                );
+await Future<void>.delayed(
+  const Duration(milliseconds: 400),
+);
 
-                await loadCategories();
+if (!mounted) {
+  return;
+}
+
+ScaffoldMessenger.of(this.context).showSnackBar(
+  const SnackBar(
+    content: Text(
+      'Categoría creada correctamente',
+    ),
+  ),
+);
+
+await loadCategories();
               } catch (error) {
                 if (!mounted) {
                   return;
