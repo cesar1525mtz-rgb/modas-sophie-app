@@ -68,6 +68,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
           .from('products')
           .select('id, name, category_id')
           .eq('business_id', businessId)
+          .eq('active', true)
           .order('name');
 
       final List<Map<String, dynamic>>
@@ -290,8 +291,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
       category['products'] ?? [],
     );
 
-    final productAdded =
-        await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CategoryProductsPage(
           categoryName:
@@ -302,9 +302,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
       ),
     );
 
-    if (productAdded == true) {
-      await loadCategories();
-    }
+    await loadCategories();
   }
 
   @override
@@ -550,7 +548,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
 }
 
 class CategoryProductsPage
-    extends StatelessWidget {
+    extends StatefulWidget {
   final String categoryName;
 
   final List<Map<String, dynamic>> products;
@@ -561,21 +559,314 @@ class CategoryProductsPage
     required this.products,
   });
 
-  Future<void> openNewProduct(
-    BuildContext context,
-  ) async {
+  @override
+  State<CategoryProductsPage> createState() =>
+      _CategoryProductsPageState();
+}
+
+class _CategoryProductsPageState
+    extends State<CategoryProductsPage> {
+  final SupabaseClient supabase =
+      Supabase.instance.client;
+
+  late List<Map<String, dynamic>> products;
+
+  @override
+  void initState() {
+    super.initState();
+
+    products =
+        List<Map<String, dynamic>>.from(
+      widget.products,
+    );
+  }
+
+  Future<void> openNewProduct() async {
     final productSaved =
         await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => NewProductPage(
-          initialCategoryName: categoryName,
+          initialCategoryName:
+              widget.categoryName,
         ),
       ),
     );
 
-    if (productSaved == true && context.mounted) {
+    if (productSaved == true && mounted) {
       Navigator.of(context).pop(true);
     }
+  }
+
+  Future<void> openProduct(
+    Map<String, dynamic> product,
+  ) async {
+    try {
+      final productId =
+          product['id'].toString();
+
+      final productRow = await supabase
+          .from('products')
+          .select(
+            'id, name, sku_base, cost, sale_price, minimum_stock',
+          )
+          .eq('id', productId)
+          .single();
+
+      final variantRows = await supabase
+          .from('product_variants')
+          .select(
+            'sku, size, color, current_stock',
+          )
+          .eq('product_id', productId)
+          .eq('active', true)
+          .order('sku');
+
+      if (!mounted) {
+        return;
+      }
+
+      final variants = (variantRows as List)
+          .map(
+            (row) =>
+                Map<String, dynamic>.from(row),
+          )
+          .toList();
+
+      final totalStock = variants.fold<int>(
+        0,
+        (sum, variant) =>
+            sum +
+            ((variant['current_stock'] as num?)
+                    ?.toInt() ??
+                0),
+      );
+
+      final minimumStock =
+          (productRow['minimum_stock'] as num?)
+                  ?.toInt() ??
+              0;
+
+      final lowStock =
+          totalStock <= minimumStock;
+
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) {
+          return SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    productRow['name']
+                            ?.toString() ??
+                        'Producto',
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    productRow['sku_base']
+                            ?.toString() ??
+                        '',
+                  ),
+                  const SizedBox(height: 18),
+                  if (lowStock)
+                    Container(
+                      width: double.infinity,
+                      padding:
+                          const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color:
+                            const Color(0xFFFFE8E8),
+                        borderRadius:
+                            BorderRadius.circular(16),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons
+                                .warning_amber_rounded,
+                            color:
+                                Color(0xFFB3261E),
+                            size: 30,
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'STOCK BAJO — Reabastecer producto',
+                              style: TextStyle(
+                                fontWeight:
+                                    FontWeight.bold,
+                                color:
+                                    Color(0xFFB3261E),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Container(
+                      width: double.infinity,
+                      padding:
+                          const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color:
+                            const Color(0xFFEAF5ED),
+                        borderRadius:
+                            BorderRadius.circular(16),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons
+                                .check_circle_outline,
+                            color:
+                                Color(0xFF2E6B3E),
+                            size: 30,
+                          ),
+                          SizedBox(width: 12),
+                          Text(
+                            'Stock disponible',
+                            style: TextStyle(
+                              fontWeight:
+                                  FontWeight.bold,
+                              color:
+                                  Color(0xFF2E6B3E),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 20),
+                  detailRow(
+                    'Categoría',
+                    widget.categoryName,
+                  ),
+                  detailRow(
+                    'Costo',
+                    '\$${((productRow['cost'] as num?) ?? 0).toDouble().toStringAsFixed(2)}',
+                  ),
+                  detailRow(
+                    'Precio',
+                    '\$${((productRow['sale_price'] as num?) ?? 0).toDouble().toStringAsFixed(2)}',
+                  ),
+                  detailRow(
+                    'Stock total',
+                    totalStock.toString(),
+                  ),
+                  detailRow(
+                    'Stock mínimo',
+                    minimumStock.toString(),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Existencias por variante',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...variants.map((variant) {
+                    final details = <String>[];
+
+                    final size =
+                        variant['size']?.toString();
+
+                    final color =
+                        variant['color']?.toString();
+
+                    if (size != null &&
+                        size.isNotEmpty) {
+                      details.add(
+                        'Talla: $size',
+                      );
+                    }
+
+                    if (color != null &&
+                        color.isNotEmpty) {
+                      details.add(
+                        'Color: $color',
+                      );
+                    }
+
+                    final description =
+                        details.isEmpty
+                            ? 'Sin talla ni color'
+                            : details.join(' · ');
+
+                    final stock =
+                        (variant['current_stock']
+                                    as num?)
+                                ?.toInt() ??
+                            0;
+
+                    return Card(
+                      child: ListTile(
+                        title: Text(
+                          variant['sku']
+                                  ?.toString() ??
+                              '',
+                        ),
+                        subtitle: Text(
+                          description,
+                        ),
+                        trailing: Text(
+                          '$stock pzas.',
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
+        SnackBar(
+          content: Text(
+            'No fue posible abrir el producto: $error',
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget detailRow(
+    String label,
+    String value,
+  ) {
+    return Padding(
+      padding:
+          const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        mainAxisAlignment:
+            MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -589,7 +880,7 @@ class CategoryProductsPage
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         title: Text(
-          categoryName,
+          widget.categoryName,
           style: const TextStyle(
             color: Color(0xFF211D1E),
             fontWeight: FontWeight.w600,
@@ -601,9 +892,7 @@ class CategoryProductsPage
       ),
       floatingActionButton:
           FloatingActionButton.extended(
-        onPressed: () {
-          openNewProduct(context);
-        },
+        onPressed: openNewProduct,
         backgroundColor:
             const Color(0xFFFFDDE8),
         foregroundColor:
@@ -671,51 +960,63 @@ class CategoryProductsPage
                     product['name']?.toString() ??
                         'Sin nombre';
 
-                return Container(
-                  padding:
-                      const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color:
-                        const Color(0xFFFFF0F4),
+                return Material(
+                  color:
+                      const Color(0xFFFFF0F4),
+                  borderRadius:
+                      BorderRadius.circular(20),
+                  child: InkWell(
                     borderRadius:
                         BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 50,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFFFFDDE8,
+                    onTap: () {
+                      openProduct(product);
+                    },
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.all(18),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: const Color(
+                                0xFFFFDDE8,
+                              ),
+                              borderRadius:
+                                  BorderRadius.circular(
+                                15,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons
+                                  .inventory_2_outlined,
+                              color:
+                                  Color(0xFF8F4D62),
+                            ),
                           ),
-                          borderRadius:
-                              BorderRadius.circular(
-                            15,
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              productName,
+                              style:
+                                  const TextStyle(
+                                fontSize: 18,
+                                fontWeight:
+                                    FontWeight.w600,
+                                color:
+                                    Color(0xFF211D1E),
+                              ),
+                            ),
                           ),
-                        ),
-                        child: const Icon(
-                          Icons
-                              .inventory_2_outlined,
-                          color:
-                              Color(0xFF8F4D62),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          productName,
-                          style:
-                              const TextStyle(
-                            fontSize: 18,
-                            fontWeight:
-                                FontWeight.w600,
+                          const Icon(
+                            Icons.chevron_right,
                             color:
-                                Color(0xFF211D1E),
+                                Color(0xFF62585B),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 );
               },
