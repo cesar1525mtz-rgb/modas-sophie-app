@@ -5,13 +5,12 @@ class SalesRepository {
 
   SalesRepository(this.client);
 
-  Future<List<Map<String, dynamic>>> listSales() async {
+  Future<List<Map<String, dynamic>>> getSalesHistory() async {
     final rows = await client
         .from('sales')
         .select(
           'id,folio,seller_id,total,sold_cost,gross_profit,'
           'status,created_at,'
-          'user_profiles!sales_seller_id_fkey(name),'
           'sale_payments(method,amount,reference),'
           'sale_items('
           'historical_name,historical_sku,'
@@ -19,13 +18,43 @@ class SalesRepository {
           'quantity,unit_price,total'
           ')',
         )
-        .order(
-          'created_at',
-          ascending: false,
-        );
+        .order('created_at', ascending: false);
 
-    return List<Map<String, dynamic>>.from(
-      rows as List,
-    );
+    final sales = List<Map<String, dynamic>>.from(rows);
+
+    final sellerIds = sales
+        .map((sale) => sale['seller_id'])
+        .where((id) => id != null)
+        .map((id) => id.toString())
+        .toSet()
+        .toList();
+
+    final Map<String, String> sellerNames = {};
+
+    if (sellerIds.isNotEmpty) {
+      final profiles = await client
+          .from('user_profiles')
+          .select('id,name')
+          .inFilter('id', sellerIds);
+
+      for (final profile in profiles) {
+        final id = profile['id']?.toString();
+        final name = profile['name']?.toString();
+
+        if (id != null && name != null && name.trim().isNotEmpty) {
+          sellerNames[id] = name;
+        }
+      }
+    }
+
+    for (final sale in sales) {
+      final sellerId = sale['seller_id']?.toString();
+
+      sale['seller_name'] = sellerId == null
+          ? null
+          : sellerNames[sellerId];
+    }
+
+    return sales;
   }
 }
