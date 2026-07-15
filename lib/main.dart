@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'core/app_theme.dart';
 import 'core/supabase_config.dart';
 import 'data/auth_repository.dart';
@@ -39,7 +42,27 @@ class SessionGate extends StatefulWidget {
 }
 
 class _SessionGateState extends State<SessionGate> {
-  late final Future<Widget> destination = _resolve();
+  StreamSubscription<AuthState>? _authSubscription;
+  Future<Widget>? _destination;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _destination = _resolve();
+
+    if (SupabaseConfig.isConfigured) {
+      _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen(
+        (data) {
+          if (!mounted) return;
+
+          setState(() {
+            _destination = _resolve();
+          });
+        },
+      );
+    }
+  }
 
   Future<Widget> _resolve() async {
     if (!SupabaseConfig.isConfigured ||
@@ -50,10 +73,12 @@ class _SessionGateState extends State<SessionGate> {
     try {
       final repo = AuthRepository(Supabase.instance.client);
       final profile = await repo.currentProfile();
+
       if (!profile.active) {
         await repo.signOut();
         return const LoginPage();
       }
+
       return OwnerDashboardPage(profile: profile);
     } catch (_) {
       await Supabase.instance.client.auth.signOut();
@@ -62,14 +87,23 @@ class _SessionGateState extends State<SessionGate> {
   }
 
   @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => FutureBuilder<Widget>(
-        future: destination,
+        future: _destination,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
+              body: Center(
+                child: CircularProgressIndicator(),
+              ),
             );
           }
+
           return snapshot.data ?? const LoginPage();
         },
       );
