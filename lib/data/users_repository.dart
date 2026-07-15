@@ -7,12 +7,13 @@ class UsersRepository {
   UsersRepository(this.client);
 
   Future<List<AppUser>> listUsers() async {
-    final rows = await client
-        .from('user_profiles')
-        .select()
-        .order('name');
+    final result = await client.rpc(
+      'list_business_users',
+    );
 
-    return (rows as List)
+    final rows = result as List;
+
+    return rows
         .map(
           (row) => AppUser.fromMap(
             Map<String, dynamic>.from(row as Map),
@@ -21,7 +22,10 @@ class UsersRepository {
         .toList();
   }
 
-  Future<void> setActive(String userId, bool active) async {
+  Future<void> setActive(
+    String userId,
+    bool active,
+  ) async {
     await client.rpc(
       'set_seller_active',
       params: {
@@ -45,6 +49,8 @@ class UsersRepository {
       },
     );
 
-    return Map<String, dynamic>.from(result as Map);
+    return Map<String, dynamic>.from(
+      result as Map,
+    );
   }
 }
