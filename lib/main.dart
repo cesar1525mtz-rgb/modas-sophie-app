@@ -6,8 +6,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/app_theme.dart';
 import 'core/supabase_config.dart';
 import 'data/auth_repository.dart';
+import 'models/app_user.dart';
 import 'features/auth/login_page.dart';
 import 'features/home/owner_dashboard_page.dart';
+import 'features/home/seller_dashboard_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,7 +54,8 @@ class _SessionGateState extends State<SessionGate> {
     _destination = _resolve();
 
     if (SupabaseConfig.isConfigured) {
-      _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen(
+      _authSubscription =
+          Supabase.instance.client.auth.onAuthStateChange.listen(
         (data) {
           if (!mounted) return;
 
@@ -71,7 +74,10 @@ class _SessionGateState extends State<SessionGate> {
     }
 
     try {
-      final repo = AuthRepository(Supabase.instance.client);
+      final repo = AuthRepository(
+        Supabase.instance.client,
+      );
+
       final profile = await repo.currentProfile();
 
       if (!profile.active) {
@@ -79,9 +85,18 @@ class _SessionGateState extends State<SessionGate> {
         return const LoginPage();
       }
 
-      return OwnerDashboardPage(profile: profile);
+      if (profile.role == UserRole.seller) {
+        return SellerDashboardPage(
+          profile: profile,
+        );
+      }
+
+      return OwnerDashboardPage(
+        profile: profile,
+      );
     } catch (_) {
       await Supabase.instance.client.auth.signOut();
+
       return const LoginPage();
     }
   }
