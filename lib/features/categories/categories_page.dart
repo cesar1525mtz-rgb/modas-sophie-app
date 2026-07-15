@@ -12,6 +12,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
   final SupabaseClient supabase = Supabase.instance.client;
 
   bool isLoading = true;
+  bool isSaving = false;
   String? errorMessage;
 
   List<Map<String, dynamic>> categories = [];
@@ -76,7 +77,9 @@ class _CategoriesPageState extends State<CategoriesPage> {
                   product['category_id']?.toString() ==
                   category['id']?.toString(),
             )
-            .map((product) => Map<String, dynamic>.from(product))
+            .map(
+              (product) => Map<String, dynamic>.from(product),
+            )
             .toList();
 
         category['products'] = categoryProducts;
@@ -105,7 +108,153 @@ class _CategoriesPageState extends State<CategoriesPage> {
     }
   }
 
-  void openCategory(Map<String, dynamic> category) {
+  Future<void> showAddCategoryDialog() async {
+    final nameController = TextEditingController();
+    final skuController = TextEditingController();
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> saveCategory() async {
+              final name = nameController.text.trim();
+              final sku = skuController.text.trim().toUpperCase();
+
+              if (name.isEmpty || sku.isEmpty) {
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Escribe el nombre y el SKU de la categoría.',
+                    ),
+                  ),
+                );
+
+                return;
+              }
+
+              setDialogState(() {
+                isSaving = true;
+              });
+
+              try {
+                final businessId = await getBusinessId();
+
+                if (businessId == null) {
+                  throw Exception(
+                    'No se encontró el negocio del usuario.',
+                  );
+                }
+
+                await supabase.from('categories').insert({
+                  'business_id': businessId,
+                  'name': name,
+                  'sku_prefix': sku,
+                });
+
+                if (!mounted) {
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop();
+
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Categoría creada correctamente',
+                    ),
+                  ),
+                );
+
+                await loadCategories();
+              } catch (error) {
+                if (!mounted) {
+                  return;
+                }
+
+                setDialogState(() {
+                  isSaving = false;
+                });
+
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'No se pudo crear la categoría: $error',
+                    ),
+                  ),
+                );
+              }
+            }
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFFFFF9F7),
+              title: const Text('Nueva categoría'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    textCapitalization: TextCapitalization.words,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre de la categoría',
+                      hintText: 'Ej. Bolsas',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: skuController,
+                    textCapitalization:
+                        TextCapitalization.characters,
+                    maxLength: 10,
+                    decoration: const InputDecoration(
+                      labelText: 'SKU de categoría',
+                      hintText: 'Ej. BOL',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving
+                      ? null
+                      : () {
+                          Navigator.of(dialogContext).pop();
+                        },
+                  child: const Text('CANCELAR'),
+                ),
+                FilledButton(
+                  onPressed:
+                      isSaving ? null : saveCategory,
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text('GUARDAR'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    isSaving = false;
+
+    nameController.dispose();
+    skuController.dispose();
+  }
+
+  void openCategory(
+    Map<String, dynamic> category,
+  ) {
     final products = List<Map<String, dynamic>>.from(
       category['products'] ?? [],
     );
@@ -113,8 +262,8 @@ class _CategoriesPageState extends State<CategoriesPage> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CategoryProductsPage(
-          categoryName: category['name']?.toString() ?? 'Categoría',
-          skuPrefix: category['sku_prefix']?.toString(),
+          categoryName:
+              category['name']?.toString() ?? 'Categoría',
           products: products,
         ),
       ),
@@ -138,6 +287,18 @@ class _CategoriesPageState extends State<CategoriesPage> {
         ),
         iconTheme: const IconThemeData(
           color: Color(0xFF211D1E),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: showAddCategoryDialog,
+        backgroundColor: const Color(0xFFFFDDE8),
+        foregroundColor: const Color(0xFF8F4D62),
+        icon: const Icon(Icons.add),
+        label: const Text(
+          'AGREGAR CATEGORÍA',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
       body: RefreshIndicator(
@@ -210,7 +371,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
           ),
           SizedBox(height: 12),
           Text(
-            'Las categorías que registres al crear productos aparecerán aquí.',
+            'Crea tu primera categoría con el botón de abajo.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 16,
@@ -223,22 +384,35 @@ class _CategoriesPageState extends State<CategoriesPage> {
 
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        100,
+      ),
       itemCount: categories.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 14),
+      separatorBuilder: (_, __) =>
+          const SizedBox(height: 14),
       itemBuilder: (context, index) {
         final category = categories[index];
 
-        final name = category['name']?.toString() ?? 'Sin nombre';
-        final skuPrefix = category['sku_prefix']?.toString() ?? '';
-        final productCount = category['product_count'] as int? ?? 0;
+        final name =
+            category['name']?.toString() ?? 'Sin nombre';
+
+        final skuPrefix =
+            category['sku_prefix']?.toString() ?? '';
+
+        final productCount =
+            category['product_count'] as int? ?? 0;
 
         return Material(
           color: const Color(0xFFFFF0F4),
           borderRadius: BorderRadius.circular(22),
           child: InkWell(
             borderRadius: BorderRadius.circular(22),
-            onTap: () => openCategory(category),
+            onTap: () {
+              openCategory(category);
+            },
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: 20,
@@ -262,7 +436,8 @@ class _CategoriesPageState extends State<CategoriesPage> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
                       children: [
                         Text(
                           name,
@@ -313,13 +488,11 @@ class _CategoriesPageState extends State<CategoriesPage> {
 
 class CategoryProductsPage extends StatelessWidget {
   final String categoryName;
-  final String? skuPrefix;
   final List<Map<String, dynamic>> products;
 
   const CategoryProductsPage({
     super.key,
     required this.categoryName,
-    required this.skuPrefix,
     required this.products,
   });
 
@@ -347,7 +520,8 @@ class CategoryProductsPage extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment:
+                      MainAxisAlignment.center,
                   children: [
                     Icon(
                       Icons.inventory_2_outlined,
@@ -378,11 +552,14 @@ class CategoryProductsPage extends StatelessWidget {
           : ListView.separated(
               padding: const EdgeInsets.all(20),
               itemCount: products.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              separatorBuilder: (_, __) =>
+                  const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final product = products[index];
+
                 final productName =
-                    product['name']?.toString() ?? 'Sin nombre';
+                    product['name']?.toString() ??
+                    'Sin nombre';
 
                 return Container(
                   padding: const EdgeInsets.all(18),
@@ -397,7 +574,8 @@ class CategoryProductsPage extends StatelessWidget {
                         height: 50,
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFDDE8),
-                          borderRadius: BorderRadius.circular(15),
+                          borderRadius:
+                              BorderRadius.circular(15),
                         ),
                         child: const Icon(
                           Icons.inventory_2_outlined,
