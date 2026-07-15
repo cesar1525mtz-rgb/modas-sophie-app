@@ -50,8 +50,7 @@ class _SellerDashboardPageState
       final sales = await _client
           .from('sales')
           .select('id,total')
-          .eq('created_by', widget.profile.id)
-          .eq('status', 'COMPLETADA')
+          .eq('seller_id', widget.profile.id)
           .gte(
             'created_at',
             startOfDay.toIso8601String(),
@@ -64,9 +63,8 @@ class _SellerDashboardPageState
             (sale['total'] as num?)?.toDouble() ?? 0;
       }
 
-      final cashSession = await _client.rpc(
-        'get_open_cash_session',
-      );
+      final cashSession =
+          await _client.rpc('get_open_cash_session');
 
       if (!mounted) return;
 
