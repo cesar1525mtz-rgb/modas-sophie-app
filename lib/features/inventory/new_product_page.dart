@@ -160,16 +160,20 @@ void initState() {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+              onPressed: dialogContext.mounted
+                  ? () => Navigator.pop(dialogContext)
+                  : null,
               child: const Text('CANCELAR'),
             ),
             FilledButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                  controller.text.trim(),
-                );
-              },
+              onPressed: dialogContext.mounted
+                  ? () {
+                      Navigator.pop(
+                        dialogContext,
+                        controller.text.trim(),
+                      );
+                    }
+                  : null,
               child: const Text('AGREGAR'),
             ),
           ],
@@ -196,15 +200,19 @@ void initState() {
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
+              onPressed: dialogContext.mounted
+                  ? () {
+                      Navigator.pop(dialogContext, false);
+                    }
+                  : null,
               child: const Text('CANCELAR'),
             ),
             FilledButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
+              onPressed: dialogContext.mounted
+                  ? () {
+                      Navigator.pop(dialogContext, true);
+                    }
+                  : null,
               child: const Text('ELIMINAR'),
             ),
           ],
@@ -864,7 +872,9 @@ void initState() {
 
       _message('Producto guardado');
 
-      Navigator.pop(context, true);
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
     } catch (e) {
       if (!mounted) return;
 

@@ -120,6 +120,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
   Future<void> showAddCategoryDialog() async {
     final nameController = TextEditingController();
     final skuController = TextEditingController();
+    var isDialogSaving = false;
 
     await showDialog<void>(
       context: context,
@@ -128,16 +129,13 @@ class _CategoriesPageState extends State<CategoriesPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             Future<void> saveCategory() async {
-              final name =
-                  nameController.text.trim();
-
-              final sku = skuController.text
-                  .trim()
-                  .toUpperCase();
+              final name = nameController.text.trim();
+              final sku = skuController.text.trim().toUpperCase();
 
               if (name.isEmpty || sku.isEmpty) {
-                ScaffoldMessenger.of(this.context)
-                    .showSnackBar(
+                if (!mounted) return;
+
+                ScaffoldMessenger.of(this.context).showSnackBar(
                   const SnackBar(
                     content: Text(
                       'Escribe el nombre y el SKU de la categoría.',
@@ -149,12 +147,11 @@ class _CategoriesPageState extends State<CategoriesPage> {
               }
 
               setDialogState(() {
-                isSaving = true;
+                isDialogSaving = true;
               });
 
               try {
-                final businessId =
-                    await getBusinessId();
+                final businessId = await getBusinessId();
 
                 if (businessId == null) {
                   throw Exception(
@@ -162,48 +159,45 @@ class _CategoriesPageState extends State<CategoriesPage> {
                   );
                 }
 
-                await supabase
-    .from('categories')
-    .insert({
-  'business_id': businessId,
-  'name': name,
-  'sku_prefix': sku,
-});
+                await supabase.from('categories').insert({
+                  'business_id': businessId,
+                  'name': name,
+                  'sku_prefix': sku,
+                });
 
-if (!mounted || !dialogContext.mounted) {
-  return;
-}
+                if (!mounted || !dialogContext.mounted) {
+                  return;
+                }
 
-Navigator.of(dialogContext).pop();
+                Navigator.of(dialogContext).pop();
 
-await Future<void>.delayed(
-  const Duration(milliseconds: 400),
-);
+                await Future<void>.delayed(
+                  const Duration(milliseconds: 400),
+                );
 
-if (!mounted) {
-  return;
-}
-
-ScaffoldMessenger.of(this.context).showSnackBar(
-  const SnackBar(
-    content: Text(
-      'Categoría creada correctamente',
-    ),
-  ),
-);
-
-await loadCategories();
-              } catch (error) {
                 if (!mounted) {
                   return;
                 }
 
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Categoría creada correctamente',
+                    ),
+                  ),
+                );
+
+                await loadCategories();
+              } catch (error) {
+                if (!mounted || !dialogContext.mounted) {
+                  return;
+                }
+
                 setDialogState(() {
-                  isSaving = false;
+                  isDialogSaving = false;
                 });
 
-                ScaffoldMessenger.of(this.context)
-                    .showSnackBar(
+                ScaffoldMessenger.of(this.context).showSnackBar(
                   SnackBar(
                     content: Text(
                       'No se pudo crear la categoría: $error',
@@ -214,8 +208,7 @@ await loadCategories();
             }
 
             return AlertDialog(
-              backgroundColor:
-                  const Color(0xFFFFF9F7),
+              backgroundColor: const Color(0xFFFFF9F7),
               title: const Text(
                 'Nueva categoría',
               ),
@@ -224,13 +217,10 @@ await loadCategories();
                 children: [
                   TextField(
                     controller: nameController,
-                    textCapitalization:
-                        TextCapitalization.words,
+                    textCapitalization: TextCapitalization.words,
                     autofocus: true,
-                    decoration:
-                        const InputDecoration(
-                      labelText:
-                          'Nombre de la categoría',
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre de la categoría',
                       hintText: 'Ej. Bolsas',
                       border: OutlineInputBorder(),
                     ),
@@ -238,13 +228,10 @@ await loadCategories();
                   const SizedBox(height: 16),
                   TextField(
                     controller: skuController,
-                    textCapitalization:
-                        TextCapitalization.characters,
+                    textCapitalization: TextCapitalization.characters,
                     maxLength: 10,
-                    decoration:
-                        const InputDecoration(
-                      labelText:
-                          'SKU de categoría',
+                    decoration: const InputDecoration(
+                      labelText: 'SKU de categoría',
                       hintText: 'Ej. BOL',
                       border: OutlineInputBorder(),
                     ),
@@ -253,25 +240,22 @@ await loadCategories();
               ),
               actions: [
                 TextButton(
-                  onPressed: isSaving
+                  onPressed: isDialogSaving
                       ? null
                       : () {
-                          Navigator.of(
-                            dialogContext,
-                          ).pop();
+                          if (dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop();
+                          }
                         },
                   child: const Text('CANCELAR'),
                 ),
                 FilledButton(
-                  onPressed: isSaving
-                      ? null
-                      : saveCategory,
-                  child: isSaving
+                  onPressed: isDialogSaving ? null : saveCategory,
+                  child: isDialogSaving
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child:
-                              CircularProgressIndicator(
+                          child: CircularProgressIndicator(
                             strokeWidth: 2,
                           ),
                         )
@@ -283,8 +267,6 @@ await loadCategories();
         );
       },
     );
-
-    isSaving = false;
 
     nameController.dispose();
     skuController.dispose();
@@ -672,7 +654,7 @@ class _CategoryProductsPageState
                     productRow['name']
                             ?.toString() ??
                         'Producto',
-                    style: Theme.of(context)
+                    style: Theme.of(sheetContext)
                         .textTheme
                         .headlineSmall,
                   ),
