@@ -169,7 +169,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
                   return;
                 }
 
-                Navigator.of(dialogContext).pop();
+                Navigator.of( dialogContext).pop();
 
                 await Future<void>.delayed(
                   const Duration(milliseconds: 400),
