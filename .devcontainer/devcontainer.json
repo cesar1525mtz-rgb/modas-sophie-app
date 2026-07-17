@@ -1,9 +1,8 @@
 {
-      "name": "Modas Sophie Flutter",
-        "image": "mcr.microsoft.com/devcontainers/universal:2",
-          "features": {
-              "ghcr.io/cirruslabs/flutter:latest": {}
-                },
-                  "postCreateCommand": "flutter doctor"
-                  }
+  "name": "Modas Sophie Flutter",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/cirruslabs/flutter:latest": {}
+  },
+  "postCreateCommand": "flutter doctor"
 }
